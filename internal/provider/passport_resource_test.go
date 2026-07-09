@@ -26,7 +26,7 @@ func mustLabels(t *testing.T, labels map[string]string) types.Map {
 
 // TestRenderPassport_Full covers every optional field populated, and
 // asserts the rendered document round-trips through
-// agent-stack-go/passport.Parse (the same validator Idryx/Qryx use) and
+// agent-stack-go/passport.Parse (the same validator Idryx uses) and
 // matches the shape agent-stack-go's own tests expect.
 func TestRenderPassport_Full(t *testing.T) {
 	data := &passportResourceModel{

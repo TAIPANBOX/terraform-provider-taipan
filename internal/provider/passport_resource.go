@@ -53,7 +53,7 @@ func (r *passportResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 	resp.Schema = schema.Schema{
 		Description: "Renders and validates a TAIPANBOX Agent Passport document (schema taipanbox.dev/agent-passport/v0.1). " +
 			"This resource calls no API: a passport is a small, static JSON file describing one agent's identity, owner, runtime and attestation posture, consumed by Idryx and Qryx, not a server-managed object. " +
-			"Create and Update compute and validate the document, reusing agent-stack-go/passport's Parse verbatim (the same validation Idryx and Qryx run on ingest), and, if output_path is set, write it to disk at file mode 0600. Delete removes that file, if any. " +
+			"Create and Update compute and validate the document, reusing agent-stack-go/passport's Parse verbatim (the same validation Idryx runs on ingest), and, if output_path is set, write it to disk at file mode 0600. Delete removes that file, if any. " +
 			"The rendered document is exposed as the computed json attribute for downstream use, e.g. handing it to another resource or provisioner.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -204,8 +204,8 @@ func (r *passportResource) Delete(ctx context.Context, req resource.DeleteReques
 
 // renderPassport builds a passport.Passport from the resource's current
 // Terraform data, marshals it to deterministic, indented JSON, and
-// validates it by round-tripping through agent-stack-go/passport.Parse --
-// the exact function Idryx and Qryx use to ingest a passport document. A
+// validates it by round-tripping through agent-stack-go/passport.Parse,
+// the exact function Idryx uses to ingest a passport document. A
 // taipan_agent_passport that applies cleanly is therefore guaranteed to
 // parse downstream too.
 func renderPassport(ctx context.Context, data *passportResourceModel) ([]byte, error) {
