@@ -5,7 +5,7 @@ go 1.26
 toolchain go1.26.5
 
 require (
-	github.com/TAIPANBOX/agent-stack-go v0.0.0
+	github.com/TAIPANBOX/agent-stack-go v0.1.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-log v0.10.0
 )
@@ -33,5 +33,3 @@ require (
 	google.golang.org/grpc v1.82.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
-
-replace github.com/TAIPANBOX/agent-stack-go => ../agent-stack-go
