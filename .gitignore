@@ -1,0 +1,37 @@
+# OS
+.DS_Store
+
+# Go
+/bin/
+/dist/
+*.test
+*.out
+coverage.*
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Env / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Editor
+.idea/
+.vscode/
+
+# Session / tooling (not part of the project)
+.remember/
+.claude/
