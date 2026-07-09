@@ -80,7 +80,7 @@ flowchart TB
 
 - **Consumes**: Terraform configuration (`taipan_budget`, `taipan_agent_passport` resources).
 - **Produces**: **TokenFuse Cloud** spend budgets and rendered, validated Agent Passport documents.
-- **Talks to**: **TokenFuse Cloud** (the `taipan_budget` API), **agent-passport** (validates against `agent-stack-go/passport`'s `Parse`, the same check **Idryx** and **Qryx** run on ingest); imports **agent-stack-go**.
+- **Talks to**: **TokenFuse Cloud** (the `taipan_budget` API), **agent-passport** (validates against `agent-stack-go/passport`'s `Parse`, the same check **Idryx** runs on ingest); imports **agent-stack-go**.
 
 The full stack is TokenFuse (spend), Wardryx (policy), Engram (memory), Idryx (access), Qryx (crypto), Verdryx (quality), Mockryx (pre-prod), on the shared Agent Passport + agent-event contract (agent-stack-go / agent-passport), configured via terraform-provider-taipan.
 
@@ -153,8 +153,8 @@ resource "taipan_agent_passport" "support_bot" {
 This resource calls no API. A passport is a small, static JSON document, not a
 server-managed object; Idryx and Qryx read it from disk. Create and Update render and
 validate the document, reusing `agent-stack-go/passport`'s `Parse` verbatim (the exact
-validation Idryx and Qryx run on ingest), so a `taipan_agent_passport` that applies
-cleanly is guaranteed to parse downstream too. If `output_path` is set, the rendered
+validation Idryx runs on ingest), so a `taipan_agent_passport` that applies
+cleanly is guaranteed to parse cleanly through Idryx too. If `output_path` is set, the rendered
 document is written there at file mode `0600`; Delete removes that file, if any.
 
 The rendered document is also available as the computed `json` attribute, for piping
