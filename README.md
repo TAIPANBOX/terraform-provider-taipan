@@ -1,54 +1,32 @@
 <div align="center">
 
-# terraform-provider-taipan
+# terraform-provider-taipan - Governance as Code
 
-**Governance as code for the TAIPANBOX agent-governance stack.** Manage AI-agent spend
-budgets and agent identity passports the same way you already manage the rest of your
-infrastructure: in version control, PR-reviewed, applied by the same Terraform pipeline
-your platform team runs everything else through.
+**Manage TokenFuse Cloud spend budgets and Agent Passports the same way you already manage the rest of your infrastructure: in version control, PR-reviewed, applied by the same Terraform pipeline your platform team runs everything else through.**
 
-[![License](https://img.shields.io/github/license/TAIPANBOX/terraform-provider-taipan?color=blue)](LICENSE)
-[![Go version](https://img.shields.io/github/go-mod/go-version/TAIPANBOX/terraform-provider-taipan?logo=go&logoColor=white)](go.mod)
+[![CI](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml/badge.svg)](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml)
+![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
+![Status](https://img.shields.io/badge/phase-2%20resources%20shipped-success.svg)
+
+<img src="docs/architecture.png" alt="terraform-provider-taipan architecture: HCL config flows through terraform plan/apply into the taipan provider, which reconciles taipan_budget and taipan_agent_passport against TokenFuse Cloud and the passport file" width="960">
 
 </div>
 
+`terraform-provider-taipan` closes a governance gap: a FinOps or platform team that
+runs a bank's cloud infrastructure through Terraform today has to manage AI-agent
+budgets and agent identities out of band (a dashboard click here, a curl command
+there), with no PR review, no diff, and no audit trail beyond whatever the target
+system logs on its own. This provider turns TokenFuse Cloud spend budgets and Agent
+Passport documents into plain Terraform resources: reviewed in a PR like an IAM
+policy or a security group, planned before they apply, diffed when they drift, and
+auditable through the same `terraform plan`/`apply` history as the rest of the
+estate. **This is purely defensive tooling**: the provider only configures controls
+the operator already owns (their own TokenFuse Cloud org, their own passport
+documents); it never reaches into, scans, or takes any action against a third-party
+system.
+
 ---
-
-## Why
-
-A FinOps or platform team that runs a bank's cloud infrastructure through Terraform
-today has to manage AI-agent budgets and agent identities out of band: a dashboard
-click here, a curl command there, no PR review, no diff, no audit trail beyond
-whatever the target system logs on its own. That is a governance gap for anything an
-AI agent can spend money on or act as.
-
-`terraform-provider-taipan` closes that gap for two parts of the TAIPANBOX stack:
-
-- **`taipan_budget`**: a central spend budget for a TokenFuse Cloud run, the same
-  budget the gateway enforces in real time (an over-budget call gets a hard `402`,
-  not a warning after the fact).
-- **`taipan_agent_passport`**: an Agent Passport document (identity, owner, runtime,
-  attestation posture) that Idryx and Qryx read to know who an agent is and who owns
-  it.
-
-Both become plain Terraform resources: reviewed in a PR like an IAM policy or a
-security group, planned before they apply, diffed when they drift, and auditable
-through the same `terraform plan`/`apply` history as the rest of the estate. This is
-the FinOps-as-code and identity-as-code case: budgets and passports stop being a
-side channel and become one more resource type in the bank's existing Terraform
-workflow.
-
-**This is purely defensive tooling.** The provider only configures controls the
-operator already owns: their own TokenFuse Cloud org, their own passport documents.
-It never reaches into, scans, or takes any action against a third-party system.
-
-## Resources
-
-| Resource                  | Status  | Calls an API? | Purpose                                                          |
-| -------------------------- | ------- | -------------- | ----------------------------------------------------------------- |
-| `taipan_budget`             | shipped | yes (TokenFuse Cloud) | Central spend budget for one run                          |
-| `taipan_agent_passport`      | shipped | no (renders a file)   | Agent Passport document (`taipanbox.dev/agent-passport/v0.1`) |
-| `wardryx_policy`             | planned | n/a                    | Not built yet: Wardryx has no policy-management API today, and its policy types are internal. Tracked for a future release once that API exists. |
 
 ## Where this fits in the stack
 
@@ -86,25 +64,28 @@ flowchart TB
 
 The full stack is TokenFuse (spend), Wardryx (policy), Engram (memory), Idryx (access), Qryx (crypto), Verdryx (quality), Mockryx (pre-prod), on the shared Agent Passport + agent-event contract (agent-stack-go / agent-passport), configured via terraform-provider-taipan.
 
-## Provider configuration
+---
 
-```hcl
-provider "taipan" {
-  cloud_url = "https://cloud.tokenfuse.example" # or TOKENFUSE_CLOUD_URL
-  cloud_key = var.tokenfuse_cloud_key            # or TOKENFUSE_CLOUD_KEY
-}
-```
+## Resources
 
-| Attribute   | Env fallback           | Required | Notes                                                                 |
-| ----------- | ----------------------- | -------- | ---------------------------------------------------------------------- |
-| `cloud_url` | `TOKENFUSE_CLOUD_URL`   | yes      | Base URL of the TokenFuse Cloud control plane.                        |
-| `cloud_key` | `TOKENFUSE_CLOUD_KEY`   | yes      | Sensitive. Sent as `Authorization: Bearer <cloud_key>`. `taipan_budget` mutations need an admin-role key; the bearer format is `key:org[:role]`. |
+<div align="center">
+<img src="docs/resources.png" alt="terraform-provider-taipan resources: taipan_budget and taipan_agent_passport shipped, wardryx_policy planned, no data sources today" width="900">
+</div>
 
-Both are required at `Configure` time, even for a passport-only configuration: this
-keeps the failure mode a single clear diagnostic on `terraform plan`, instead of a
-confusing error the first time a `taipan_budget` resource is touched.
+Two parts of the TAIPANBOX stack are plain Terraform resources today, both reviewed
+in a PR, planned before they apply, and diffed when they drift:
 
-## `taipan_budget`
+| Resource | Status | Calls an API? | Purpose |
+| --- | --- | --- | --- |
+| `taipan_budget` | shipped | yes (TokenFuse Cloud) | Central spend budget for one run |
+| `taipan_agent_passport` | shipped | no (renders a file) | Agent Passport document (`taipanbox.dev/agent-passport/v0.1`) |
+| `wardryx_policy` | planned | n/a | Not built yet: Wardryx has no policy-management API today, and its policy types are internal. Tracked for a future release once that API exists. |
+
+The provider currently exposes no data sources (`Provider.DataSources()` returns an
+empty list): read-back today goes through `terraform state`/`refresh`, not a
+`data "taipan_..."` block.
+
+### `taipan_budget`
 
 ```hcl
 resource "taipan_budget" "support_bot" {
@@ -133,7 +114,7 @@ set in TokenFuse Cloud until something else overwrites it. This is a deliberate
 choice, not an oversight: inventing a DELETE call here would 404 against every real
 deployment.
 
-## `taipan_agent_passport`
+### `taipan_agent_passport`
 
 ```hcl
 resource "taipan_agent_passport" "support_bot" {
@@ -155,8 +136,8 @@ resource "taipan_agent_passport" "support_bot" {
 This resource calls no API. A passport is a small, static JSON document, not a
 server-managed object; Idryx and Qryx read it from disk. Create and Update render and
 validate the document, reusing `agent-stack-go/passport`'s `Parse` verbatim (the exact
-validation Idryx runs on ingest), so a `taipan_agent_passport` that applies
-cleanly is guaranteed to parse cleanly through Idryx too. If `output_path` is set, the rendered
+validation Idryx runs on ingest), so a `taipan_agent_passport` that applies cleanly is
+guaranteed to parse cleanly through Idryx too. If `output_path` is set, the rendered
 document is written there at file mode `0600`; Delete removes that file, if any.
 
 The rendered document is also available as the computed `json` attribute, for piping
@@ -170,6 +151,45 @@ Fields: `id` (the `agent://` URI, required, forces replacement, validated with
 (optional). There is no `attestation_detail` attribute yet: `attestation_method` alone
 covers `none`, but a detail-bearing method like `spiffe-svid` or `oidc` needs a
 follow-up attribute before it carries a real reference.
+
+---
+
+## Provider configuration
+
+```hcl
+provider "taipan" {
+  cloud_url = "https://cloud.tokenfuse.example" # or TOKENFUSE_CLOUD_URL
+  cloud_key = var.tokenfuse_cloud_key            # or TOKENFUSE_CLOUD_KEY
+}
+```
+
+| Attribute | Env fallback | Required | Notes |
+| --- | --- | --- | --- |
+| `cloud_url` | `TOKENFUSE_CLOUD_URL` | yes | Base URL of the TokenFuse Cloud control plane. |
+| `cloud_key` | `TOKENFUSE_CLOUD_KEY` | yes | Sensitive. Sent as `Authorization: Bearer <cloud_key>`. `taipan_budget` mutations need an admin-role key; the bearer format is `key:org[:role]`. |
+
+Both are required at `Configure` time, even for a passport-only configuration: this
+keeps the failure mode a single clear diagnostic on `terraform plan`, instead of a
+confusing error the first time a `taipan_budget` resource is touched.
+
+---
+
+## Governance as code, the loop
+
+<div align="center">
+<img src="docs/workflow.png" alt="Governance-as-code loop: author HCL, terraform plan diffs against live state, terraform apply reconciles, and the next terraform plan catches any out-of-band drift" width="900">
+</div>
+
+The loop is the same one a platform team already runs for every other resource type:
+author the HCL, `terraform plan` shows the diff against live state (TokenFuse Cloud
+budgets, passport files on disk), `terraform apply` reconciles reality to match the
+declared configuration, and if anything changes out of band afterward (a dashboard
+click, a direct API call), the next `terraform plan` reads live state again, shows
+the delta, and `apply` reconciles it back. No side channel survives the next
+plan/apply: budgets and passports stop being a place configuration can silently
+drift.
+
+---
 
 ## Example
 
@@ -200,11 +220,16 @@ helpers the tests call directly), and skipping the acceptance-test dependency ke
 fully offline and the dependency tree smaller. `TF_ACC`-gated acceptance tests can be
 added later without disturbing this structure.
 
-## Status & roadmap
+---
 
-- [x] `taipan_budget`
-- [x] `taipan_agent_passport`
+## Status
+
+- [x] `taipan_budget`: central TokenFuse Cloud spend budget, create/update/read/best-effort delete
+- [x] `taipan_agent_passport`: rendered, validated Agent Passport document, optional on-disk output
+- [x] CI: gofmt, vet, staticcheck, race tests, build, govulncheck, gosec
 - [ ] `wardryx_policy`, once Wardryx has a policy-management API
+- [ ] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud
+- [ ] `attestation_detail` attribute for detail-bearing attestation methods (`spiffe-svid`, `oidc`)
 
 ## License
 
