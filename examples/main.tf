@@ -7,15 +7,27 @@ terraform {
   }
 }
 
-# cloud_url and cloud_key can also come from TOKENFUSE_CLOUD_URL and
-# TOKENFUSE_CLOUD_KEY, which keeps the key out of version control. cloud_key
-# must be an admin-role TokenFuse Cloud API key for taipan_budget to work.
+# cloud_url/cloud_key and wardryx_url/wardryx_key can also come from
+# TOKENFUSE_CLOUD_URL/TOKENFUSE_CLOUD_KEY and WARDRYX_URL/WARDRYX_KEY, which
+# keeps both keys out of version control. cloud_key must be an admin-role
+# TokenFuse Cloud API key for taipan_budget to work; wardryx_key must be an
+# admin-role Wardryx key (just the key segment of one WARDRYX_KEYS entry,
+# not the full key:org:role triple) for taipan_wardryx_policy to work. All
+# four are optional at this level -- only the pair the resources you
+# actually use need are required.
 provider "taipan" {
-  cloud_url = "https://cloud.tokenfuse.example"
-  cloud_key = var.tokenfuse_cloud_key
+  cloud_url   = "https://cloud.tokenfuse.example"
+  cloud_key   = var.tokenfuse_cloud_key
+  wardryx_url = "https://wardryx.acme-bank.example"
+  wardryx_key = var.wardryx_admin_key
 }
 
 variable "tokenfuse_cloud_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "wardryx_admin_key" {
   type      = string
   sensitive = true
 }
@@ -49,4 +61,17 @@ resource "taipan_agent_passport" "support_bot" {
 
 output "support_bot_passport_json" {
   value = taipan_agent_passport.support_bot.json
+}
+
+# A Wardryx policy-as-code document, layered on top of Wardryx's own
+# -policy/WARDRYX_POLICY file-loaded rules (which this resource never
+# touches). Unlike taipan_budget, Wardryx has a real DELETE endpoint, so
+# destroying this resource actually removes the rule from Wardryx.
+resource "taipan_wardryx_policy" "ops_guard" {
+  id     = "ops-guard"
+  target = "agent://acme-bank.example/ops/*"
+
+  deny_tool          = ["shell_exec"]
+  max_steps          = 40
+  deny_if_unattested = true
 }

@@ -7,9 +7,9 @@
 [![CI](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml/badge.svg)](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml)
 ![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
-![Status](https://img.shields.io/badge/phase-2%20resources%20shipped-success.svg)
+![Status](https://img.shields.io/badge/phase-3%20resources%20shipped-success.svg)
 
-<img src="docs/architecture.png" alt="terraform-provider-taipan architecture: HCL config flows through terraform plan/apply into the taipan provider, which reconciles taipan_budget and taipan_agent_passport against TokenFuse Cloud and the passport file" width="960">
+<img src="docs/architecture.png" alt="terraform-provider-taipan architecture: HCL config flows through terraform plan/apply into the taipan provider, which reconciles taipan_budget and taipan_agent_passport against TokenFuse Cloud and the passport file, and taipan_wardryx_policy against Wardryx" width="960">
 
 </div>
 
@@ -58,9 +58,9 @@ flowchart TB
   SPEC[["agent-passport: the spec"]] -.->|governs| BUS
 ```
 
-- **Consumes**: Terraform configuration (`taipan_budget`, `taipan_agent_passport` resources).
-- **Produces**: **TokenFuse Cloud** spend budgets and rendered, validated Agent Passport documents.
-- **Talks to**: **TokenFuse Cloud** (the `taipan_budget` API), **agent-passport** (validates against `agent-stack-go/passport`'s `Parse`, the same check **Idryx** runs on ingest); imports **agent-stack-go**.
+- **Consumes**: Terraform configuration (`taipan_budget`, `taipan_agent_passport`, `taipan_wardryx_policy` resources).
+- **Produces**: **TokenFuse Cloud** spend budgets, rendered/validated Agent Passport documents, and **Wardryx** policy-as-code documents.
+- **Talks to**: **TokenFuse Cloud** (the `taipan_budget` API), **agent-passport** (validates against `agent-stack-go/passport`'s `Parse`, the same check **Idryx** runs on ingest), **Wardryx** (the `taipan_wardryx_policy` admin `/v1/policies` API); imports **agent-stack-go**.
 
 The full stack is TokenFuse (spend), Wardryx (policy), Engram (memory), Idryx (access), Qryx (crypto), Verdryx (quality), Mockryx (pre-prod), on the shared Agent Passport + agent-event contract (agent-stack-go / agent-passport), configured via terraform-provider-taipan.
 
@@ -69,17 +69,17 @@ The full stack is TokenFuse (spend), Wardryx (policy), Engram (memory), Idryx (a
 ## Resources
 
 <div align="center">
-<img src="docs/resources.png" alt="terraform-provider-taipan resources: taipan_budget and taipan_agent_passport shipped, wardryx_policy planned, no data sources today" width="900">
+<img src="docs/resources.png" alt="terraform-provider-taipan resources: taipan_budget, taipan_agent_passport, and taipan_wardryx_policy shipped, no data sources today" width="900">
 </div>
 
-Two parts of the TAIPANBOX stack are plain Terraform resources today, both reviewed
+Three parts of the TAIPANBOX stack are plain Terraform resources today, all reviewed
 in a PR, planned before they apply, and diffed when they drift:
 
 | Resource | Status | Calls an API? | Purpose |
 | --- | --- | --- | --- |
 | `taipan_budget` | shipped | yes (TokenFuse Cloud) | Central spend budget for one run |
 | `taipan_agent_passport` | shipped | no (renders a file) | Agent Passport document (`taipanbox.dev/agent-passport/v0.1`) |
-| `wardryx_policy` | planned | n/a | Not built yet: Wardryx has no policy-management API today, and its policy types are internal. Tracked for a future release once that API exists. |
+| `taipan_wardryx_policy` | shipped | yes (Wardryx) | One Wardryx policy-as-code document, layered on top of Wardryx's own file-loaded policies |
 
 The provider currently exposes no data sources (`Provider.DataSources()` returns an
 empty list): read-back today goes through `terraform state`/`refresh`, not a
@@ -154,25 +154,75 @@ string (agent-passport/SPEC.md §4.3: e.g. a SPIFFE ID for `spiffe-svid`, an iss
 URL for `oidc`); it is only rendered when `attestation_method` is also set, and
 omitted from the document entirely otherwise.
 
+### `taipan_wardryx_policy`
+
+```hcl
+resource "taipan_wardryx_policy" "ops_guard" {
+  id     = "ops-guard"
+  target = "agent://acme-bank.example/ops/*"
+
+  deny_tool               = ["shell_exec"]
+  allow_domains           = ["good.example.com"]
+  require_human_above_usd = 500
+  deny_above_usd          = 5000
+  max_steps               = 40
+  deny_if_unattested      = true
+}
+```
+
+Manages one Wardryx admin policy-as-code document via `PUT`/`GET`/`DELETE
+/v1/policies/{id}`, on top of the operator's own Wardryx deployment. This is
+layered, not exclusive: Wardryx's own `-policy`/`WARDRYX_POLICY` file-loaded
+rules stay a permanent floor no `taipan_wardryx_policy` write can remove, and
+those file-loaded rules aren't manageable through this resource at all (they
+carry no `id`) -- see Wardryx's own README, "Policy-as-code". Create and
+Update both call `PUT /v1/policies/{id}`, Wardryx's own upsert endpoint;
+Read calls `GET /v1/policies/{id}` and drops the resource from state if the
+policy is gone (deleted out of band), so Terraform plans a recreate instead
+of a false "no changes". **Unlike `taipan_budget`, this Delete is real**:
+Wardryx's policy API has an actual `DELETE /v1/policies/{id}`, so destroying
+this resource removes the rule from Wardryx, not just from Terraform state.
+
+Fields: `id` (the policy id, e.g. `ops-guard`, required, forces replacement --
+Wardryx addresses policies by id, not name, and there is no rename) and
+`target` (the `agent://` glob, required) are the only required attributes.
+`name` / `deny_tool` / `allow_domains` / `require_human_above_usd` /
+`deny_above_usd` / `max_steps` / `deny_if_unattested` are all optional,
+mirroring `policy.Policy`'s fields in the wardryx repo one-for-one; each has
+a matching zero-value default (`""` / `[]` / `0` / `false`), since Wardryx's
+own wire format can't distinguish an explicitly-set zero value from an
+omitted one (`omitempty`) and a mismatched default would otherwise make
+every plan for an unconfigured field fail with "provider produced
+inconsistent result". `updated_at` is computed: the RFC 3339 timestamp of
+this policy's last write, as reported by Wardryx.
+
 ---
 
 ## Provider configuration
 
 ```hcl
 provider "taipan" {
-  cloud_url = "https://cloud.tokenfuse.example" # or TOKENFUSE_CLOUD_URL
-  cloud_key = var.tokenfuse_cloud_key            # or TOKENFUSE_CLOUD_KEY
+  cloud_url   = "https://cloud.tokenfuse.example" # or TOKENFUSE_CLOUD_URL
+  cloud_key   = var.tokenfuse_cloud_key           # or TOKENFUSE_CLOUD_KEY
+  wardryx_url = "https://wardryx.acme.example"    # or WARDRYX_URL
+  wardryx_key = var.wardryx_admin_key             # or WARDRYX_KEY
 }
 ```
 
-| Attribute | Env fallback | Required | Notes |
-| --- | --- | --- | --- |
-| `cloud_url` | `TOKENFUSE_CLOUD_URL` | yes | Base URL of the TokenFuse Cloud control plane. |
-| `cloud_key` | `TOKENFUSE_CLOUD_KEY` | yes | Sensitive. Sent as `Authorization: Bearer <cloud_key>`. `taipan_budget` mutations need an admin-role key; the bearer format is `key:org[:role]`. |
+| Attribute | Env fallback | Notes |
+| --- | --- | --- |
+| `cloud_url` | `TOKENFUSE_CLOUD_URL` | Base URL of the TokenFuse Cloud control plane. Needed by `taipan_budget`. |
+| `cloud_key` | `TOKENFUSE_CLOUD_KEY` | Sensitive. Sent as `Authorization: Bearer <cloud_key>`. `taipan_budget` mutations need an admin-role key; the bearer format is `key:org[:role]`. |
+| `wardryx_url` | `WARDRYX_URL` | Base URL of the operator's Wardryx deployment. Needed by `taipan_wardryx_policy`. |
+| `wardryx_key` | `WARDRYX_KEY` | Sensitive. Sent as `Authorization: Bearer <wardryx_key>` -- just the key segment of one `WARDRYX_KEYS` entry (`key:org:role`), not the full triple. `taipan_wardryx_policy` requires the key's role to be admin. |
 
-Both are required at `Configure` time, even for a passport-only configuration: this
-keeps the failure mode a single clear diagnostic on `terraform plan`, instead of a
-confusing error the first time a `taipan_budget` resource is touched.
+All four are optional at the provider level and validated lazily, per resource type:
+a passport-only configuration needs none of them, a budget-only configuration only
+needs `cloud_url`/`cloud_key`, and so on. Each resource's own `Configure` reports a
+single clear diagnostic ("Missing TokenFuse Cloud configuration" / "Missing Wardryx
+configuration") the first time it is actually touched with its pair unset, rather than
+the provider failing unconditionally for every resource regardless of which one a
+given configuration actually uses.
 
 ---
 
@@ -212,15 +262,21 @@ CI (`.github/workflows/ci.yml`) runs `gofmt`, `go vet`, `staticcheck`, `go test 
 `go build` in one job and `govulncheck` + `gosec -quiet` in a second, mirroring the
 rest of the TAIPANBOX Go stack (see Idryx).
 
-Tests need neither a real Terraform binary nor a live TokenFuse Cloud: the
-`taipan_agent_passport` render/validate logic is unit-tested directly, and
-`taipan_budget`'s HTTP calls are tested against an `httptest` mock server that asserts
-the exact request/response shapes read out of `crates/cloud/src/http.rs`. There are no
-`terraform-plugin-testing` acceptance tests in this repo yet: the unit tests above
-already exercise every CRUD code path (Create/Update/Read both funnel through the same
-helpers the tests call directly), and skipping the acceptance-test dependency keeps CI
-fully offline and the dependency tree smaller. `TF_ACC`-gated acceptance tests can be
-added later without disturbing this structure.
+Tests need neither a real Terraform binary nor a live TokenFuse Cloud/Wardryx: the
+`taipan_agent_passport` render/validate logic is unit-tested directly, and both
+`taipan_budget`'s and `taipan_wardryx_policy`'s HTTP calls are tested against an
+`httptest` mock server that asserts the exact request/response shapes read out of
+`crates/cloud/src/http.rs` and wardryx's `internal/api`, respectively (method, path,
+headers, body shape, and the not-found/error-response cases each resource's Read/Delete
+branch on). There are no `terraform-plugin-testing` acceptance tests in this repo yet,
+so the `tfsdk.Plan`/`State` handling inside each resource's Create/Read/Update/Delete
+itself is not unit-tested directly, only through those clients; `taipan_wardryx_policy`
+was additionally verified once by hand with the real `terraform` binary against a live
+Wardryx (`dev_overrides`, full create/plan-no-diff/update/drift-detect/destroy cycle,
+including confirming Delete's real `DELETE` call and the Computed-plus-Default fields'
+plan/apply consistency), which is how the two bugs fixed in this same change were
+actually found. `TF_ACC`-gated acceptance tests can be added later without disturbing
+this structure.
 
 ---
 
@@ -228,9 +284,9 @@ added later without disturbing this structure.
 
 - [x] `taipan_budget`: central TokenFuse Cloud spend budget, create/update/read/best-effort delete
 - [x] `taipan_agent_passport`: rendered, validated Agent Passport document, optional on-disk output
+- [x] `taipan_wardryx_policy`: Wardryx policy-as-code document, create/update/read/real delete, layered on Wardryx's own file-loaded policies
 - [x] CI: gofmt, vet, staticcheck, race tests, build, govulncheck, gosec
-- [ ] `wardryx_policy`, once Wardryx has a policy-management API
-- [ ] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud
+- [ ] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud / Wardryx
 - [x] `attestation_detail` attribute for detail-bearing attestation methods (`spiffe-svid`, `oidc`)
 
 ## License

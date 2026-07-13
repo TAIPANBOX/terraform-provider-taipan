@@ -70,15 +70,22 @@ func (r *budgetResource) Configure(_ context.Context, req resource.ConfigureRequ
 	if req.ProviderData == nil {
 		return
 	}
-	client, ok := req.ProviderData.(*CloudClient)
+	clients, ok := req.ProviderData.(*providerClients)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected taipan_budget Configure type",
-			fmt.Sprintf("Expected *provider.CloudClient, got: %T. Report this issue to the provider maintainers.", req.ProviderData),
+			fmt.Sprintf("Expected *provider.providerClients, got: %T. Report this issue to the provider maintainers.", req.ProviderData),
 		)
 		return
 	}
-	r.client = client
+	if clients.Cloud == nil {
+		resp.Diagnostics.AddError(
+			"Missing TokenFuse Cloud configuration",
+			"taipan_budget requires cloud_url and cloud_key, set in the provider block or via the TOKENFUSE_CLOUD_URL/TOKENFUSE_CLOUD_KEY environment variables.",
+		)
+		return
+	}
+	r.client = clients.Cloud
 }
 
 func (r *budgetResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
