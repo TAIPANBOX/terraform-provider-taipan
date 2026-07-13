@@ -40,6 +40,7 @@ type passportResourceModel struct {
 	Runtime           types.String `tfsdk:"runtime"`
 	Parent            types.String `tfsdk:"parent"`
 	AttestationMethod types.String `tfsdk:"attestation_method"`
+	AttestationDetail types.String `tfsdk:"attestation_detail"`
 	Labels            types.Map    `tfsdk:"labels"`
 	OutputPath        types.String `tfsdk:"output_path"`
 	JSON              types.String `tfsdk:"json"`
@@ -82,7 +83,12 @@ func (r *passportResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 			"attestation_method": schema.StringAttribute{
 				Optional: true,
 				Description: "How the organization binds this passport's id to a workload: one of none, oidc, spiffe-svid, enclave-key, mtls-cert. " +
-					"Left unset, the rendered document omits the attestation block entirely. There is no attestation_detail attribute yet (agent-stack-go's Attestation.Detail is left empty); add one before relying on detail-bearing methods like spiffe-svid or oidc.",
+					"Left unset, the rendered document omits the attestation block entirely.",
+			},
+			"attestation_detail": schema.StringAttribute{
+				Optional: true,
+				Description: "A method-specific reference for attestation_method, e.g. a SPIFFE ID for spiffe-svid or an issuer URL for oidc (agent-passport/SPEC.md §4.3; unconstrained string, no format is validated). " +
+					"Ignored if attestation_method is unset, since the rendered document then omits the attestation block entirely.",
 			},
 			"labels": schema.MapAttribute{
 				ElementType: types.StringType,
@@ -219,7 +225,7 @@ func renderPassport(ctx context.Context, data *passportResourceModel) ([]byte, e
 	}
 
 	if method := data.AttestationMethod.ValueString(); !data.AttestationMethod.IsNull() && method != "" {
-		p.Attestation = &passport.Attestation{Method: method}
+		p.Attestation = &passport.Attestation{Method: method, Detail: data.AttestationDetail.ValueString()}
 	}
 
 	if !data.Labels.IsNull() && !data.Labels.IsUnknown() {

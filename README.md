@@ -123,6 +123,7 @@ resource "taipan_agent_passport" "support_bot" {
   display_name        = "Tier-1 support bot"
   runtime             = "langgraph"
   attestation_method  = "spiffe-svid"
+  attestation_detail  = "spiffe://acme-bank.example/support/tier1-bot"
 
   labels = {
     env         = "prod"
@@ -147,10 +148,11 @@ by `encoding/json`, so the same input always produces byte-identical output.
 
 Fields: `id` (the `agent://` URI, required, forces replacement, validated with
 `ValidateAgentURI`), `owner` (required), `display_name` / `runtime` / `parent` /
-`attestation_method` (all optional), `labels` (optional `map(string)`), `output_path`
-(optional). There is no `attestation_detail` attribute yet: `attestation_method` alone
-covers `none`, but a detail-bearing method like `spiffe-svid` or `oidc` needs a
-follow-up attribute before it carries a real reference.
+`attestation_method` / `attestation_detail` (all optional), `labels` (optional
+`map(string)`), `output_path` (optional). `attestation_detail` is an unconstrained
+string (agent-passport/SPEC.md §4.3: e.g. a SPIFFE ID for `spiffe-svid`, an issuer
+URL for `oidc`); it is only rendered when `attestation_method` is also set, and
+omitted from the document entirely otherwise.
 
 ---
 
@@ -229,7 +231,7 @@ added later without disturbing this structure.
 - [x] CI: gofmt, vet, staticcheck, race tests, build, govulncheck, gosec
 - [ ] `wardryx_policy`, once Wardryx has a policy-management API
 - [ ] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud
-- [ ] `attestation_detail` attribute for detail-bearing attestation methods (`spiffe-svid`, `oidc`)
+- [x] `attestation_detail` attribute for detail-bearing attestation methods (`spiffe-svid`, `oidc`)
 
 ## License
 

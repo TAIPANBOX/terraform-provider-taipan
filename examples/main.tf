@@ -37,6 +37,7 @@ resource "taipan_agent_passport" "support_bot" {
   display_name       = "Tier-1 support bot"
   runtime            = "langgraph"
   attestation_method = "spiffe-svid"
+  attestation_detail = "spiffe://acme-bank.example/support/tier1-bot"
 
   labels = {
     env         = "prod"

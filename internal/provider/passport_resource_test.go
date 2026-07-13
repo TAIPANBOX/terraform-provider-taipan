@@ -36,6 +36,7 @@ func TestRenderPassport_Full(t *testing.T) {
 		Runtime:           types.StringValue("langgraph"),
 		Parent:            types.StringValue("agent://acme-bank.example/support/orchestrator"),
 		AttestationMethod: types.StringValue("spiffe-svid"),
+		AttestationDetail: types.StringValue("spiffe://acme-bank.example/support/tier1-bot"),
 		Labels:            mustLabels(t, map[string]string{"env": "prod", "cost_center": "cs-eu"}),
 		OutputPath:        types.StringNull(),
 	}
@@ -61,8 +62,8 @@ func TestRenderPassport_Full(t *testing.T) {
 	if p.Attestation == nil || p.Attestation.Method != "spiffe-svid" {
 		t.Errorf("Attestation = %+v, want Method=spiffe-svid", p.Attestation)
 	}
-	if p.Attestation != nil && p.Attestation.Detail != "" {
-		t.Errorf("Attestation.Detail = %q, want empty (no attestation_detail attribute yet)", p.Attestation.Detail)
+	if p.Attestation != nil && p.Attestation.Detail != "spiffe://acme-bank.example/support/tier1-bot" {
+		t.Errorf("Attestation.Detail = %q, want spiffe://acme-bank.example/support/tier1-bot", p.Attestation.Detail)
 	}
 	if p.Labels["env"] != "prod" || p.Labels["cost_center"] != "cs-eu" {
 		t.Errorf("Labels = %+v", p.Labels)
@@ -188,6 +189,33 @@ func TestRenderPassport_NoAttestationWhenMethodUnset(t *testing.T) {
 	}
 	if strings.Contains(string(rendered), "attestation") {
 		t.Errorf("attestation present with attestation_method unset: %s", rendered)
+	}
+}
+
+// TestRenderPassport_NoDetailWhenUnset asserts that setting
+// attestation_method without attestation_detail omits the detail key
+// entirely (json:"detail,omitempty"), rather than emitting "detail":"".
+func TestRenderPassport_NoDetailWhenUnset(t *testing.T) {
+	data := &passportResourceModel{
+		ID:                types.StringValue("agent://acme.example/bot"),
+		Owner:             types.StringValue("team@acme.example"),
+		AttestationMethod: types.StringValue("none"),
+	}
+
+	rendered, err := renderPassport(context.Background(), data)
+	if err != nil {
+		t.Fatalf("renderPassport: %v", err)
+	}
+	if strings.Contains(string(rendered), "detail") {
+		t.Errorf("detail present with attestation_detail unset: %s", rendered)
+	}
+
+	p, err := passport.Parse(rendered)
+	if err != nil {
+		t.Fatalf("passport.Parse(rendered): %v", err)
+	}
+	if p.Attestation == nil || p.Attestation.Detail != "" {
+		t.Errorf("Attestation = %+v, want non-nil with empty Detail", p.Attestation)
 	}
 }
 
