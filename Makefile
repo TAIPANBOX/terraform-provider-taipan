@@ -1,13 +1,21 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build test vet fmt lint staticcheck govulncheck gosec generate clean
+.PHONY: build test testacc vet fmt lint staticcheck govulncheck gosec generate clean
 
 build:
 	go build $(LDFLAGS) -o bin/terraform-provider-taipan .
 
 test:
 	go test -race ./...
+
+# TF_ACC-gated acceptance tests (TestAccBudgetResource,
+# TestAccWardryxPolicyResource) against real, disposable local TokenFuse
+# Cloud + Wardryx instances built from sibling repo checkouts. See
+# scripts/testacc-local.sh; override TOKENFUSE_REPO_DIR / WARDRYX_REPO_DIR
+# if those repos aren't checked out next to this one.
+testacc:
+	./scripts/testacc-local.sh
 
 vet:
 	go vet ./...

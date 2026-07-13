@@ -253,30 +253,66 @@ each resource.
 ```sh
 make build   # go build -> bin/terraform-provider-taipan
 make test    # go test -race ./...
+make testacc # TF_ACC acceptance tests against real, disposable local backends
 make lint    # go vet + staticcheck + gofmt -l
 make govulncheck
 make gosec
 ```
 
 CI (`.github/workflows/ci.yml`) runs `gofmt`, `go vet`, `staticcheck`, `go test -race`,
-`go build` in one job and `govulncheck` + `gosec -quiet` in a second, mirroring the
-rest of the TAIPANBOX Go stack (see Idryx).
+`go build` in a `build` job, `govulncheck` + `gosec -quiet` in a `security` job, and the
+`TF_ACC` acceptance tests below in a third `acceptance` job, mirroring the rest of the
+TAIPANBOX Go stack (see Idryx) for the first two.
 
-Tests need neither a real Terraform binary nor a live TokenFuse Cloud/Wardryx: the
-`taipan_agent_passport` render/validate logic is unit-tested directly, and both
-`taipan_budget`'s and `taipan_wardryx_policy`'s HTTP calls are tested against an
-`httptest` mock server that asserts the exact request/response shapes read out of
-`crates/cloud/src/http.rs` and wardryx's `internal/api`, respectively (method, path,
-headers, body shape, and the not-found/error-response cases each resource's Read/Delete
-branch on). There are no `terraform-plugin-testing` acceptance tests in this repo yet,
-so the `tfsdk.Plan`/`State` handling inside each resource's Create/Read/Update/Delete
-itself is not unit-tested directly, only through those clients; `taipan_wardryx_policy`
-was additionally verified once by hand with the real `terraform` binary against a live
-Wardryx (`dev_overrides`, full create/plan-no-diff/update/drift-detect/destroy cycle,
-including confirming Delete's real `DELETE` call and the Computed-plus-Default fields'
-plan/apply consistency), which is how the two bugs fixed in this same change were
-actually found. `TF_ACC`-gated acceptance tests can be added later without disturbing
-this structure.
+`go test -race ./...` (what `make test` and the `build` job both run) needs neither a
+real Terraform binary nor a live TokenFuse Cloud/Wardryx: the `taipan_agent_passport`
+render/validate logic is unit-tested directly, and both `taipan_budget`'s and
+`taipan_wardryx_policy`'s HTTP calls are tested against an `httptest` mock server that
+asserts the exact request/response shapes read out of `crates/cloud/src/http.rs` and
+wardryx's `internal/api`, respectively (method, path, headers, body shape, and the
+not-found/error-response cases each resource's Read/Delete branch on).
+
+### Acceptance tests (`TF_ACC`)
+
+`TestAccBudgetResource` and `TestAccWardryxPolicyResource`
+(`internal/provider/budget_resource_test.go`,
+`internal/provider/wardryx_policy_resource_test.go`) drive the real provider over the
+actual Terraform protocol v6 wire, via `terraform-plugin-testing`, exercising the
+`tfsdk.Plan`/`State` handling inside each resource's Create/Read/Update/Delete that the
+`httptest`-mock unit tests above deliberately don't reach. Both are gated on `TF_ACC`
+(Terraform's own opt-in convention: unset, `go test ./...` reports them as `SKIP`, never
+`FAIL`) plus a live backend, so they never affect the `build` job or a plain `go test`.
+
+Each resource's `CheckDestroy` asserts what that resource's own `Delete` actually does,
+not a generic "is it gone" check: `taipan_budget`'s asserts the budget survives (Delete
+is state-only, see its own doc comment), `taipan_wardryx_policy`'s asserts a real 404
+(Delete calls a real `DELETE`).
+
+Run them against real, disposable local instances with:
+
+```sh
+make testacc   # == ./scripts/testacc-local.sh
+```
+
+This builds and starts a real `tokenfuse-cloud` (`cargo run -p tokenfuse-cloud`) and a
+real `wardryx serve` from sibling checkouts (`../tokenfuse`, `../wardryx` by default;
+override with `TOKENFUSE_REPO_DIR` / `WARDRYX_REPO_DIR`), waits for both `/healthz`,
+points `TF_ACC=1` and the four `TOKENFUSE_CLOUD_*`/`WARDRYX_*` env vars at them, runs
+`go test -run '^TestAcc'`, and always tears both processes down again on exit, success
+or failure. The `acceptance` CI job runs this exact script unmodified, checking out
+`TAIPANBOX/tokenfuse` and `TAIPANBOX/wardryx` alongside this repo first (all three are
+public, so this needs no cross-repo secret or PAT).
+
+Writing these against a real backend, rather than assuming the SDKv2-era acceptance-test
+conventions apply unchanged, surfaced two real gaps the `httptest`-mock unit tests could
+not have caught: neither `taipan_budget` nor (implicitly) `taipan_wardryx_policy` has an
+`id` attribute the test framework's `ImportStateVerify` defaults to, so both need
+`ImportStateId` set explicitly (`taipan_budget` additionally needs
+`ImportStateVerifyIdentifierAttribute: "run_id"`, since it has no `id` at all); and
+Wardryx's `updated_at` has only second-level granularity (`time.RFC3339`, no fractional
+seconds), so a Create immediately followed by an Update in the same test process can
+land in the same wall-clock second, requiring a short `PreConfig` sleep before asserting
+`updated_at` actually changed.
 
 ---
 
@@ -286,7 +322,7 @@ this structure.
 - [x] `taipan_agent_passport`: rendered, validated Agent Passport document, optional on-disk output
 - [x] `taipan_wardryx_policy`: Wardryx policy-as-code document, create/update/read/real delete, layered on Wardryx's own file-loaded policies
 - [x] CI: gofmt, vet, staticcheck, race tests, build, govulncheck, gosec
-- [ ] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud / Wardryx
+- [x] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud / Wardryx (`make testacc`, `scripts/testacc-local.sh`, CI `acceptance` job)
 - [x] `attestation_detail` attribute for detail-bearing attestation methods (`spiffe-svid`, `oidc`)
 
 ## License

@@ -43,3 +43,40 @@ jobs:
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
           gosec -quiet ./...
+
+  # TF_ACC-gated acceptance tests (TestAccBudgetResource,
+  # TestAccWardryxPolicyResource) against real, disposable TokenFuse Cloud
+  # and Wardryx instances built from sibling checkouts in this same job --
+  # all three TAIPANBOX repos are public, so no cross-repo secret/PAT is
+  # needed. See scripts/testacc-local.sh, which this job runs unmodified
+  # (the same entry point a contributor uses locally).
+  acceptance:
+    name: acceptance tests (live TokenFuse Cloud + Wardryx)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: terraform-provider-taipan
+      - uses: actions/checkout@v4
+        with:
+          repository: TAIPANBOX/tokenfuse
+          path: tokenfuse
+      - uses: actions/checkout@v4
+        with:
+          repository: TAIPANBOX/wardryx
+          path: wardryx
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.5"
+          cache: true
+          cache-dependency-path: terraform-provider-taipan/go.sum
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tokenfuse
+      - name: Run acceptance tests
+        working-directory: terraform-provider-taipan
+        env:
+          TOKENFUSE_REPO_DIR: ${{ github.workspace }}/tokenfuse
+          WARDRYX_REPO_DIR: ${{ github.workspace }}/wardryx
+        run: ./scripts/testacc-local.sh
