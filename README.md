@@ -243,6 +243,35 @@ drift.
 
 ---
 
+## Install
+
+`terraform-provider-taipan` is not yet published to the Terraform Registry (no tags
+or releases yet), so the `required_providers` source in
+[`examples/main.tf`](examples/main.tf) will not resolve with a plain `terraform
+init`. Until the first release, build from source and point Terraform at that local
+build with a dev override instead.
+
+```sh
+git clone https://github.com/TAIPANBOX/terraform-provider-taipan
+cd terraform-provider-taipan
+go build -o terraform-provider-taipan .
+```
+
+Then add a dev override to `~/.terraformrc`:
+
+```hcl
+provider_installation {
+  dev_overrides {
+    "TAIPANBOX/taipan" = "/path/to/terraform-provider-taipan"
+  }
+  direct {}
+}
+```
+
+Point the path at the directory containing the binary you just built. With
+`dev_overrides` active, `terraform init` is skipped for this provider, and
+`terraform plan`/`apply` use the local build directly.
+
 ## Example
 
 See [`examples/main.tf`](examples/main.tf) for a complete provider block plus one of
