@@ -1,0 +1,51 @@
+# Terraform Registry release. Runs on a version tag (v*), cross-compiles and
+# signs the provider with GoReleaser, and publishes a GitHub release the
+# Terraform Registry ingests.
+#
+# This is a PUBLIC repo, so GitHub Actions standard-runner minutes are free
+# (no metered cost). It does not run until the account's Actions are active
+# (paused account-wide as of 2026-07-23) and these two repo secrets are set:
+#   GPG_PRIVATE_KEY - the ASCII-armored private key whose PUBLIC half is
+#                     registered under the TAIPANBOX namespace in the Terraform
+#                     Registry's GPG settings.
+#   PASSPHRASE      - that key's passphrase (omit the input if the key has none).
+# See README.md "Publishing a release" for the full runbook. To release without
+# Actions, run GoReleaser locally instead (same README section).
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        id: import_gpg
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.PASSPHRASE }}
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
