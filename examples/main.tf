@@ -56,6 +56,21 @@ resource "taipan_agent_passport" "support_bot" {
     cost_center = "cs-eu"
   }
 
+  # Folders this agent is declared to access and the LLM providers/models it
+  # uses. Both are declarations carried on the passport for audit and
+  # inventory (agent-passport SPEC.md 4.4-4.5), not controls enforced at
+  # runtime, and both match the blocks the Genaryx onboard wizard generates.
+  filesystem {
+    path = "/data/support/tickets"
+    mode = "read"
+  }
+
+  models {
+    provider = "anthropic"
+    model    = "claude-sonnet-4-5"
+    endpoint = "api.anthropic.com"
+  }
+
   output_path = "${path.module}/passports/tier1-bot.json"
 }
 

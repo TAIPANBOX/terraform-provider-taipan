@@ -132,6 +132,25 @@ resource "taipan_agent_passport" "support_bot" {
     cost_center = "cs-eu"
   }
 
+  # Optional: folders this agent is declared to access (SPEC.md §4.4) and the
+  # LLM providers/models/endpoints it uses (SPEC.md §4.5). Both are
+  # declarations carried on the passport for audit and inventory, not controls
+  # this stack enforces at runtime.
+  filesystem {
+    path = "/data/reports"
+    mode = "read"
+  }
+  filesystem {
+    path = "/data/out"
+    mode = "write"
+  }
+
+  models {
+    provider = "anthropic"
+    model    = "claude-sonnet-4-5"
+    endpoint = "api.anthropic.com"
+  }
+
   output_path = "${path.module}/passports/tier1-bot.json"
 }
 ```
@@ -155,6 +174,17 @@ Fields: `id` (the `agent://` URI, required, forces replacement, validated with
 string (agent-passport/SPEC.md §4.3: e.g. a SPIFFE ID for `spiffe-svid`, an issuer
 URL for `oidc`); it is only rendered when `attestation_method` is also set, and
 omitted from the document entirely otherwise.
+
+Two optional repeatable blocks carry the newer Agent Passport arrays, rendered
+as the document's root-level `filesystem` and `models` (agent-passport/SPEC.md
+§4.4-4.5), and matching the `filesystem {}` / `models {}` blocks the Genaryx
+onboard wizard generates: `filesystem { path mode }` (both required; `mode` is
+`read` or `write`) declares a folder the agent accesses, and
+`models { provider model endpoint }` (only `provider` required) declares an LLM
+provider/model/endpoint it uses. Both are declarations carried on the passport
+for audit and inventory, not controls this stack enforces at runtime; each is
+omitted from the rendered document when no blocks are set, so a passport
+declaring neither renders byte-for-byte as before these blocks existed.
 
 ### `taipan_wardryx_policy`
 
@@ -355,6 +385,7 @@ land in the same wall-clock second, requiring a short `PreConfig` sleep before a
 - [x] CI: gofmt, vet, staticcheck, race tests, build, govulncheck, gosec
 - [x] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud / Wardryx (`make testacc`, `scripts/testacc-local.sh`, CI `acceptance` job)
 - [x] `attestation_detail` attribute for detail-bearing attestation methods (`spiffe-svid`, `oidc`)
+- [x] `filesystem` / `models` blocks on `taipan_agent_passport` for declared folder access and LLM providers/models/endpoints (agent-passport SPEC.md §4.4-4.5), matching the Genaryx onboard wizard's generated Terraform
 
 ## License
 
