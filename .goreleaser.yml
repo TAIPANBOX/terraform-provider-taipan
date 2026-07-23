@@ -1,0 +1,73 @@
+# GoReleaser config for publishing terraform-provider-taipan to the Terraform
+# Registry. This is the canonical HashiCorp terraform-provider layout: it
+# cross-compiles the provider for every supported platform, zips each build,
+# writes a SHA256SUMS checksum file plus the registry manifest, and detach-signs
+# the checksums with GPG (the signature the Registry verifies against the
+# publisher's registered public key).
+#
+# Run locally: `GPG_FINGERPRINT=<your key> goreleaser release --clean`
+# (needs the private GPG key in the local keyring), or let the release workflow
+# (.github/workflows/release.yml) do it on a tag push once the GPG secrets are
+# set. See README.md "Publishing a release".
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    mod_timestamp: '{{ .CommitTimestamp }}'
+    flags:
+      - -trimpath
+    ldflags:
+      - '-s -w -X main.version={{ .Version }}'
+    goos:
+      - freebsd
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - '386'
+      - arm
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: '386'
+    binary: '{{ .ProjectName }}_v{{ .Version }}'
+
+archives:
+  - formats: [zip]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+
+checksum:
+  extra_files:
+    - glob: 'terraform-registry-manifest.json'
+      name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
+  name_template: '{{ .ProjectName }}_{{ .Version }}_SHA256SUMS'
+  algorithm: sha256
+
+signs:
+  - artifacts: checksum
+    args:
+      # GPG_FINGERPRINT selects the signing key (a local key, or the one the
+      # release workflow imports from the GPG_PRIVATE_KEY secret). The Registry
+      # verifies this detached signature against the public key registered under
+      # the TAIPANBOX namespace's Registry settings.
+      - '--batch'
+      - '--local-user'
+      - '{{ .Env.GPG_FINGERPRINT }}'
+      - '--output'
+      - '${signature}'
+      - '--detach-sign'
+      - '${artifact}'
+
+release:
+  extra_files:
+    - glob: 'terraform-registry-manifest.json'
+      name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
+
+changelog:
+  disable: true

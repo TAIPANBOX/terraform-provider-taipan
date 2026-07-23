@@ -35,3 +35,4 @@ override.tf.json
 # Session / tooling (not part of the project)
 .remember/
 .claude/
+dist/
