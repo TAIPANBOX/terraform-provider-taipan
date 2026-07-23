@@ -42,8 +42,26 @@ type passportResourceModel struct {
 	AttestationMethod types.String `tfsdk:"attestation_method"`
 	AttestationDetail types.String `tfsdk:"attestation_detail"`
 	Labels            types.Map    `tfsdk:"labels"`
+	Filesystem        types.List   `tfsdk:"filesystem"`
+	Models            types.List   `tfsdk:"models"`
 	OutputPath        types.String `tfsdk:"output_path"`
 	JSON              types.String `tfsdk:"json"`
+}
+
+// filesystemScopeModel maps one filesystem { path mode } block into state
+// (schema §4.4). Both fields are required on the block.
+type filesystemScopeModel struct {
+	Path types.String `tfsdk:"path"`
+	Mode types.String `tfsdk:"mode"`
+}
+
+// modelDeclModel maps one models { provider model endpoint } block into
+// state (schema §4.5). provider is required; model and endpoint are
+// optional and, left unset, are omitted from the rendered document.
+type modelDeclModel struct {
+	Provider types.String `tfsdk:"provider"`
+	Model    types.String `tfsdk:"model"`
+	Endpoint types.String `tfsdk:"endpoint"`
 }
 
 func (r *passportResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -102,6 +120,44 @@ func (r *passportResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 			"json": schema.StringAttribute{
 				Computed:    true,
 				Description: "The rendered, schema-validated passport document (taipanbox.dev/agent-passport/v0.1), with stable key order for a reproducible diff.",
+			},
+		},
+		Blocks: map[string]schema.Block{
+			"filesystem": schema.ListNestedBlock{
+				Description: "Folders this agent is declared to access, each a nested filesystem { path mode } block, rendered as the document's root-level filesystem array (agent-passport/SPEC.md §4.4). " +
+					"A declaration carried on the passport for audit and inventory, not a control this stack enforces at runtime. Omitted from the rendered document entirely when no blocks are set.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"path": schema.StringAttribute{
+							Required:    true,
+							Description: "Folder path the agent is declared to access, e.g. /data/reports.",
+						},
+						"mode": schema.StringAttribute{
+							Required:    true,
+							Description: "Access mode for this folder: read or write (agent-passport/SPEC.md §4.4).",
+						},
+					},
+				},
+			},
+			"models": schema.ListNestedBlock{
+				Description: "LLM providers, models and endpoints this agent is declared to use, each a nested models { provider model endpoint } block, rendered as the document's root-level models array (agent-passport/SPEC.md §4.5). " +
+					"A declaration for audit and inventory, not a control this stack enforces at runtime. Omitted from the rendered document entirely when no blocks are set.",
+				NestedObject: schema.NestedBlockObject{
+					Attributes: map[string]schema.Attribute{
+						"provider": schema.StringAttribute{
+							Required:    true,
+							Description: "LLM provider label, e.g. anthropic, openai, bedrock, google, mistral, cohere.",
+						},
+						"model": schema.StringAttribute{
+							Optional:    true,
+							Description: "Specific model this agent uses, when pinned, e.g. claude-sonnet-4-5 or gpt-4o. Omitted from the rendered document when unset.",
+						},
+						"endpoint": schema.StringAttribute{
+							Optional:    true,
+							Description: "API endpoint host this agent is declared to reach, e.g. api.anthropic.com. Omitted from the rendered document when unset.",
+						},
+					},
+				},
 			},
 		},
 	}
@@ -208,7 +264,38 @@ func (r *passportResource) Delete(ctx context.Context, req resource.DeleteReques
 	}
 }
 
-// renderPassport builds a passport.Passport from the resource's current
+// passportDocument is the wire shape renderPassport marshals. It embeds the
+// shared agent-stack-go/passport.Passport verbatim -- preserving every field
+// and its exact JSON key order -- and adds the two array fields the Agent
+// Passport JSON schema defines (agent-passport/SPEC.md §4.4-4.5) but the Go
+// mirror type does not yet carry: filesystem and models. Both are omitempty,
+// so a passport declaring neither renders byte-for-byte identically to one
+// produced before these blocks existed, and passport.Parse (which ignores
+// fields it does not know) still validates the embedded core unchanged.
+type passportDocument struct {
+	passport.Passport
+	Filesystem []passportFilesystemDoc `json:"filesystem,omitempty"`
+	Models     []passportModelDoc      `json:"models,omitempty"`
+}
+
+// passportFilesystemDoc is one entry of the document's root-level filesystem
+// array; both fields are required by the schema, so neither is omitempty.
+type passportFilesystemDoc struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+}
+
+// passportModelDoc is one entry of the document's root-level models array.
+// Only provider is required; model and endpoint are omitempty so an entry
+// naming neither serializes as a bare {"provider":"..."}, matching the
+// wizard-generated document's own shape.
+type passportModelDoc struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+	Endpoint string `json:"endpoint,omitempty"`
+}
+
+// renderPassport builds a passportDocument from the resource's current
 // Terraform data, marshals it to deterministic, indented JSON, and
 // validates it by round-tripping through agent-stack-go/passport.Parse,
 // the exact function Idryx uses to ingest a passport document. A
@@ -239,10 +326,43 @@ func renderPassport(ctx context.Context, data *passportResourceModel) ([]byte, e
 		}
 	}
 
+	doc := passportDocument{Passport: p}
+
+	if !data.Filesystem.IsNull() && !data.Filesystem.IsUnknown() {
+		var scopes []filesystemScopeModel
+		diags := data.Filesystem.ElementsAs(ctx, &scopes, false)
+		if diags.HasError() {
+			return nil, fmt.Errorf("read filesystem: %s", diags[0].Summary())
+		}
+		for _, s := range scopes {
+			doc.Filesystem = append(doc.Filesystem, passportFilesystemDoc{
+				Path: s.Path.ValueString(),
+				Mode: s.Mode.ValueString(),
+			})
+		}
+	}
+
+	if !data.Models.IsNull() && !data.Models.IsUnknown() {
+		var decls []modelDeclModel
+		diags := data.Models.ElementsAs(ctx, &decls, false)
+		if diags.HasError() {
+			return nil, fmt.Errorf("read models: %s", diags[0].Summary())
+		}
+		for _, m := range decls {
+			doc.Models = append(doc.Models, passportModelDoc{
+				Provider: m.Provider.ValueString(),
+				Model:    m.Model.ValueString(),
+				Endpoint: m.Endpoint.ValueString(),
+			})
+		}
+	}
+
 	// encoding/json marshals struct fields in declaration order and sorts
 	// map[string]string keys alphabetically (both documented, stable
 	// behaviors), so this is byte-for-byte reproducible for the same input.
-	rendered, err := json.MarshalIndent(p, "", "  ")
+	// filesystem and models are omitempty, so a passport declaring neither
+	// renders byte-for-byte as it did before those blocks existed.
+	rendered, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("render passport: %w", err)
 	}
