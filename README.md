@@ -277,11 +277,28 @@ drift.
 
 ## Install
 
-`terraform-provider-taipan` is not yet published to the Terraform Registry (no tags
-or releases yet), so the `required_providers` source in
-[`examples/main.tf`](examples/main.tf) will not resolve with a plain `terraform
-init`. Until the first release, build from source and point Terraform at that local
-build with a dev override instead.
+`terraform-provider-taipan` is published on the Terraform Registry as
+[`TAIPANBOX/taipan`](https://registry.terraform.io/providers/TAIPANBOX/taipan)
+(GPG-signed releases, see "Publishing a release" below; every future tag
+publishes automatically). Add it to a `required_providers` block and run
+`terraform init`, same as any other provider:
+
+```hcl
+terraform {
+  required_providers {
+    taipan = {
+      source  = "TAIPANBOX/taipan"
+      version = "~> 0.1"
+    }
+  }
+}
+```
+
+### Provider development
+
+Working on the provider itself, or need an unreleased change before the next
+tag? Build from source and point Terraform at that local build with a dev
+override instead of the Registry.
 
 ```sh
 git clone https://github.com/TAIPANBOX/terraform-provider-taipan
