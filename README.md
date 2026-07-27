@@ -449,6 +449,13 @@ resource schemas changed: `tfplugindocs generate --provider-name taipan`.
 This is a public repository, so GitHub Actions standard-runner minutes are
 free; the release workflow adds no metered cost.
 
+## Validation
+
+What the unit and acceptance tests actually cover, the two gaps that only a real
+backend could surface, and the honest scope (notably: `taipan_budget`'s Delete
+is state-only, because the API has no delete):
+[`VALIDATION.md`](VALIDATION.md).
+
 ## License
 
 Apache-2.0, see [LICENSE](LICENSE).
