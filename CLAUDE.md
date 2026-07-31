@@ -84,7 +84,11 @@ an absent invariant.
 3. **No credential ever reaches state, a log line, or an error message.**
    Terraform state is frequently stored unencrypted and shared. Anything
    sensitive must be marked sensitive in the schema, and error text must not
-   echo the value it failed on. *(not enforced)*
+   echo the value it failed on.
+   *(partly gated: `TestEverySecretShapedResourceAttributeIsSensitive`,
+   `TestEverySecretShapedProviderAttributeIsSensitive`,
+   `TestDataSourcesDeclareNothingUnmarked`. They hold the schema half. The
+   error-text half is unchecked, see below.)*
 4. **Dependencies stay at the declared five**: `agent-stack-go` plus the four
    `hashicorp/terraform-plugin-*` modules. A provider is a supply-chain
    dependency for everyone who uses it. *(gate: `scripts/deps-tight.sh`)*
@@ -101,12 +105,25 @@ an absent invariant.
 
 This list is debt, and it is here to stay visible rather than to be tidy.
 
-**Held by this file alone: invariants 2, 3, 6 and 7.**
+**Held by this file alone: invariants 2, 6 and 7.** Invariant 3 is half held.
 
-Invariant 3 is the one worth automating and the cheapest to start: a test that
-walks every schema attribute and asserts anything whose name matches a secret
-shape (token, secret, key, password) is marked `Sensitive`. That catches the
-regression mode, which is a new field added without the marker.
+Invariant 3's schema half is now three tests. They walk the REAL schema objects
+returned by each `Schema()` method rather than the source text, so they see what
+the framework will actually use, including nested attributes, and cannot be
+fooled by a differently formatted declaration. Anything whose name says key,
+secret, token, password or credential must be `Sensitive`. Verified by breaking:
+an unmarked `legacy_api_token` on the provider and an unmarked `override_secret`
+on a resource are both caught, and the same attribute WITH the marker passes.
+
+Two limits, stated rather than implied. The check is **name-driven**, because
+nothing can know which attributes carry secrets; an attribute holding a secret
+under a name that says nothing is beyond it and stays a matter for review. And
+the **error-text half is unchecked**: nothing stops a diagnostic interpolating
+the value it failed on. That one probably needs a reviewer, since a format
+string can carry a secret through any number of hops.
+
+The `notActuallySecret` allow-list exists so that exempting a name is a decision
+with a written reason rather than a shortcut.
 
 Invariant 6 is a two-line check: regenerate the docs in CI and fail if the tree
 is dirty afterwards. That is strictly better than asking people to remember.
