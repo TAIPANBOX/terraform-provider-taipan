@@ -40,7 +40,11 @@ gosec:
 
 # Regenerate docs from schema descriptions (requires tfplugindocs).
 generate:
-	@command -v tfplugindocs >/dev/null 2>&1 && tfplugindocs generate || echo "tfplugindocs not installed; skipping (go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@latest)"
+	@command -v tfplugindocs >/dev/null 2>&1 || { \
+	  echo "tfplugindocs is not installed. Install it rather than skipping:"; \
+	  echo "  go install github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs@latest"; \
+	  exit 1; }
+	tfplugindocs generate --provider-name taipan
 
 clean:
 	rm -rf bin
