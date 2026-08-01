@@ -54,6 +54,7 @@ staticcheck ./...
 go test -race ./...
 go build ./...
 ./scripts/deps-tight.sh
+./scripts/docs-generated.sh
 ```
 
 CI additionally runs `govulncheck ./...` and the acceptance suite
@@ -97,7 +98,11 @@ an absent invariant.
    `scripts/deps-tight.sh` for its presence, not for its use)*
 6. **Docs are generated, never hand-edited.** A hand edit survives until the
    next generation and then vanishes, usually silently and usually right after
-   somebody relied on it. *(not enforced)*
+   somebody relied on it. **The invocation is `tfplugindocs generate
+   --provider-name taipan`, and the flag is not optional:** the default derives
+   `terraform-provider-taipan` from the directory, and the provider is called
+   `taipan` everywhere a user sees it.
+   *(gate: `scripts/docs-generated.sh`)*
 7. **A published version is never reused.** Not re-tagged, not force-pushed,
    not deleted from the Registry. Ship a new patch instead. *(not enforced)*
 
@@ -125,8 +130,23 @@ string can carry a secret through any number of hops.
 The `notActuallySecret` allow-list exists so that exempting a name is a decision
 with a written reason rather than a shortcut.
 
-Invariant 6 is a two-line check: regenerate the docs in CI and fail if the tree
-is dirty afterwards. That is strictly better than asking people to remember.
+Invariant 6 is now `scripts/docs-generated.sh`, and it was not the two-line
+check this paragraph imagined. Two things had to be got right.
+
+**The invocation is not the default.** Running `tfplugindocs generate` plain
+rewrites all three page titles from `taipan` to `terraform-provider-taipan`. The
+first version of the check did that and reported the committed docs as stale;
+they were correct and the invocation was wrong. `make docs` had the same bug and
+would have corrupted the titles for anybody who ran it, so the Makefile is fixed
+too, and it no longer prints "skipping" and exits zero when the tool is absent.
+
+**It generates into a temporary copy and diffs**, rather than regenerating in
+place and reading `git status`. The in-place version needed a clean tree to
+prove anything, which pushes whoever is testing it toward committing and
+resetting around it; that is how the first draft deleted itself. The copy is of
+tracked files as they are ON DISK, not of `HEAD`, so an uncommitted schema edit
+is caught: in CI the two are the same, and locally the version that stays quiet
+is the wrong one to keep. That is strictly better than asking people to remember.
 
 Invariant 1 is gated only where somebody wrote the empty-plan step. A helper
 that every resource's acceptance test must call would make it uniform.

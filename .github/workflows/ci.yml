@@ -28,6 +28,8 @@ jobs:
         run: go build ./...
       - name: dependency list is pinned
         run: ./scripts/deps-tight.sh
+      - name: the committed docs are what the schema generates
+        run: ./scripts/docs-generated.sh
 
   security:
     runs-on: ubuntu-latest
