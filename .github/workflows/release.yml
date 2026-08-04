@@ -3,8 +3,11 @@
 # Terraform Registry ingests.
 #
 # This is a PUBLIC repo, so GitHub Actions standard-runner minutes are free
-# (no metered cost). It does not run until the account's Actions are active
-# (paused account-wide as of 2026-07-23) and these two repo secrets are set:
+# (no metered cost). Actions are active again (they were paused account-wide on
+# 2026-07-23, which is the day this ran on the v0.1.0 tag and failed in five
+# seconds on the missing secret below; 0.1.0 was then released by running
+# GoReleaser locally). This still cannot sign until these two repo secrets are
+# set, and nothing else is in the way:
 #   GPG_PRIVATE_KEY - the ASCII-armored private key whose PUBLIC half is
 #                     registered under the TAIPANBOX namespace in the Terraform
 #                     Registry's GPG settings.
