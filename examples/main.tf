@@ -40,6 +40,15 @@ resource "taipan_budget" "support_bot_daily" {
   limit_usd = 25.00
 }
 
+# A central MONTHLY spend budget for one business unit, across every run the
+# identity map attributes to it (TokenFuse's docs/20-identity-map.md section
+# 4) -- a distinct governance control from taipan_budget above, not a
+# variant of it: that one caps a single run, this one caps a whole team.
+resource "taipan_unit_budget" "treasury" {
+  unit_id   = "treasury"
+  limit_usd = 2000.00
+}
+
 # An Agent Passport: identity, owner, runtime, and attestation posture for
 # one agent. This resource calls no API; it renders and validates a static
 # JSON document that Idryx/Qryx read from disk.

@@ -156,6 +156,7 @@ func (p *taipanProvider) Resources(_ context.Context) []func() resource.Resource
 		NewBudgetResource,
 		NewAgentPassportResource,
 		NewWardryxPolicyResource,
+		NewUnitBudgetResource,
 	}
 }
 
