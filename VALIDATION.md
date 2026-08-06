@@ -11,19 +11,30 @@ what happened when the provider was pointed at real backends.
 
 ## Two layers, and only one of them proves much
 
-**24 unit tests** (`go test ./internal/provider -count=1`, green) drive each
-resource against `httptest` mocks that mirror `tokenfuse-cloud`'s and
-`wardryx`'s real API shapes: method, path, headers, body, and the not-found and
-error branches each Read and Delete depends on. Useful, and limited: a mock
-agrees with whatever the code asks it.
+**33 unit tests** (`go test ./internal/provider -count=1`, green; measured via
+`go test ./internal/provider/... -list '.*'`, the same reproducible count the
+sibling repos' `readme-numbers.sh`-style gates use, minus the five
+`TestAcc*` names) drive each resource against `httptest` mocks that mirror
+`tokenfuse-cloud`'s and `wardryx`'s real API shapes: method, path, headers,
+body, and the not-found and error branches each Read and Delete depends on.
+Useful, and limited: a mock agrees with whatever the code asks it.
 
-**Acceptance tests** (`TestAccBudgetResource`, `TestAccWardryxPolicyResource`)
-drive the real provider over the actual Terraform protocol v6 wire against a
-real `tokenfuse-cloud` and a real `wardryx serve`, covering the plan and state
-handling inside Create/Read/Update/Delete that the mocks deliberately cannot
-reach. `make testacc` builds and starts both backends from sibling checkouts,
-waits for `/healthz`, runs the tests, and tears both down on exit either way.
-CI runs that same script unmodified.
+**Acceptance tests** (`TestAccBudgetResource`, `TestAccUnitBudgetResource`,
+`TestAccWardryxPolicyResource`) drive the real provider over the actual
+Terraform protocol v6 wire against a real `tokenfuse-cloud` and a real
+`wardryx serve`, covering the plan and state handling inside
+Create/Read/Update/Delete that the mocks deliberately cannot reach. `make
+testacc` builds and starts both backends from sibling checkouts, waits for
+`/healthz`, runs the tests, and tears both down on exit either way. CI runs
+that same script unmodified.
+
+Two more (`TestAccAgentPassportFilesystemModels`,
+`TestAccAgentPassportResource_Import`) are also `TF_ACC`-gated but need no
+live backend at all, since `taipan_agent_passport` calls no API: just a
+`terraform`/`tofu` binary on `PATH`. `make testacc` doesn't invoke these
+separately; running the full suite under `TF_ACC=1` (as `testacc-local.sh`
+does, `go test -run '^TestAcc'`) covers them alongside the backend-requiring
+three.
 
 They are gated on `TF_ACC`, Terraform's own opt-in convention, so a plain
 `go test ./...` reports them `SKIP` rather than `FAIL`. That is deliberate:
@@ -39,7 +50,15 @@ from the SDKv2 era:
    assumes.** `ImportStateVerify` defaults to an `id`, so both resources need
    `ImportStateId` set explicitly, and `taipan_budget` additionally needs
    `ImportStateVerifyIdentifierAttribute: "run_id"` because it has no `id` at
-   all.
+   all. `taipan_unit_budget` shares `taipan_budget`'s exact shape (no `id`,
+   only `unit_id`), so its acceptance test applies the same
+   `ImportStateVerifyIdentifierAttribute: "unit_id"` from the start.
+   `taipan_agent_passport` is the fourth resource and needed a different fix
+   entirely, not just the same attribute: it calls no API, so its Read
+   cannot re-derive the rest of the resource from an id the way the other
+   three's can from a live server. `ImportState` reads and parses the
+   passport file at the given path directly, and the import id is that file
+   path, not the passport's own `agent://` id.
 2. **Wardryx's `updated_at` has second-level granularity** (`time.RFC3339`, no
    fractional seconds). A Create immediately followed by an Update in the same
    test process can land inside the same wall-clock second, so asserting that

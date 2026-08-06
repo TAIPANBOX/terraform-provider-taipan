@@ -7,7 +7,7 @@
 [![CI](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml/badge.svg)](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml)
 ![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
-![Status](https://img.shields.io/badge/phase-3%20resources%20shipped-success.svg)
+![Status](https://img.shields.io/badge/phase-4%20resources%20shipped-success.svg)
 
 <img src="docs/architecture.png" alt="terraform-provider-taipan architecture: HCL config flows through terraform plan/apply into the taipan provider, which reconciles taipan_budget and taipan_agent_passport against TokenFuse Cloud and the passport file, and taipan_wardryx_policy against Wardryx" width="960">
 
@@ -86,12 +86,16 @@ Run the whole open stack locally with one command via [**stack-up**](https://git
 <img src="docs/resources.png" alt="terraform-provider-taipan resources: taipan_budget, taipan_agent_passport, and taipan_wardryx_policy shipped, no data sources today" width="900">
 </div>
 
-Three parts of the TAIPANBOX stack are plain Terraform resources today, all reviewed
+The diagram above predates `taipan_unit_budget`, the fourth resource in the table below; it still
+shows the original three.
+
+Four parts of the TAIPANBOX stack are plain Terraform resources today, all reviewed
 in a PR, planned before they apply, and diffed when they drift:
 
 | Resource | Status | Calls an API? | Purpose |
 | --- | --- | --- | --- |
 | `taipan_budget` | shipped | yes (TokenFuse Cloud) | Central spend budget for one run |
+| `taipan_unit_budget` | shipped | yes (TokenFuse Cloud) | Central monthly spend budget for one business unit, across every run attributed to it |
 | `taipan_agent_passport` | shipped | no (renders a file) | Agent Passport document (`taipanbox.dev/agent-passport/v0.1`) |
 | `taipan_wardryx_policy` | shipped | yes (Wardryx) | One Wardryx policy-as-code document, layered on top of Wardryx's own file-loaded policies |
 
@@ -127,6 +131,48 @@ a `taipan_budget` resource removes it from Terraform state; the budget itself st
 set in TokenFuse Cloud until something else overwrites it. This is a deliberate
 choice, not an oversight: inventing a DELETE call here would 404 against every real
 deployment.
+
+`terraform import taipan_budget.<name> <run_id>` brings an existing run budget under
+management.
+
+### `taipan_unit_budget`
+
+```hcl
+resource "taipan_unit_budget" "treasury" {
+  unit_id   = "treasury"
+  limit_usd = 2000.00
+}
+```
+
+- `unit_id` (string, required, forces replacement): the business unit this budget
+  applies to, e.g. `treasury`. Business units are how the identity map attributes spend
+  when a key or an `agent://` prefix binds to one (see TokenFuse's
+  `docs/20-identity-map.md`, section 4); there is no in-place rename.
+- `limit_usd` (number, required): the monthly budget in US dollars. Sent to the Cloud API
+  as `budget_usd`; the server stores and reports it in microdollars
+  (`budget_usd * 1_000_000`), and this provider converts back to dollars for state.
+
+A distinct governance control from `taipan_budget`, not a variant of it: `taipan_budget`
+caps one **run** by `run_id`; `taipan_unit_budget` caps every run attributed to one
+**business unit**, enforced over a UTC calendar month. The wire shape is structurally
+identical to `taipan_budget` (same request/response fields, same admin-only write), which
+is why this resource follows the exact same pattern.
+
+Create and Update both call `POST /v1/units/{id}/budget`, the only endpoint the Cloud API
+exposes for this. Read calls `GET /v1/unit-budgets`, a deliberately separate endpoint from
+`GET /v1/budgets` (the run-budget payload is a flat `run_id -> microdollars` map old
+gateways parse verbatim, so TokenFuse Cloud never grows a nested key into it); if the unit
+no longer has a central budget override, the resource is dropped from state so Terraform
+plans a recreate instead of reporting a false "no changes".
+
+**Delete is best-effort and state-only**, mirroring `taipan_budget`: TokenFuse Cloud has no
+unit-budget-delete endpoint either, only `POST /v1/units/{id}/budget` (set/overwrite) and
+`GET /v1/unit-budgets` (read). Destroying a `taipan_unit_budget` resource removes it from
+Terraform state; the unit's budget stays set in TokenFuse Cloud until something else
+overwrites it.
+
+`terraform import taipan_unit_budget.<name> <unit_id>` brings an existing unit budget under
+management.
 
 ### `taipan_agent_passport`
 
@@ -198,6 +244,17 @@ for audit and inventory, not controls this stack enforces at runtime; each is
 omitted from the rendered document when no blocks are set, so a passport
 declaring neither renders byte-for-byte as before these blocks existed.
 
+**Import takes a file path, not the passport's own `id`.** This resource calls no
+API, so unlike `taipan_budget`/`taipan_wardryx_policy` (whose Read fetches the rest
+of the resource from a live server given just an id), there is nothing to fetch
+`taipan_agent_passport`'s other attributes from: they have to come from the document
+itself. `terraform import taipan_agent_passport.<name> ./passports/tier1-bot.json`
+reads and parses that exact file (the same `agent-stack-go/passport.Parse` Create and
+Update already round-trip through) and populates every attribute from it, including
+`output_path`, set to the path just given -- so an existing passport JSON on disk,
+exactly what `catalog/passport-templates` or the Genaryx onboard wizard produce, can
+be brought under management without a recreate.
+
 ### `taipan_wardryx_policy`
 
 ```hcl
@@ -239,6 +296,9 @@ omitted one (`omitempty`) and a mismatched default would otherwise make
 every plan for an unconfigured field fail with "provider produced
 inconsistent result". `updated_at` is computed: the RFC 3339 timestamp of
 this policy's last write, as reported by Wardryx.
+
+`terraform import taipan_wardryx_policy.<name> <policy_id>` brings an existing
+Wardryx policy under management.
 
 ---
 
@@ -357,27 +417,35 @@ TAIPANBOX Go stack (see Idryx) for the first two.
 
 `go test -race ./...` (what `make test` and the `build` job both run) needs neither a
 real Terraform binary nor a live TokenFuse Cloud/Wardryx: the `taipan_agent_passport`
-render/validate logic is unit-tested directly, and both `taipan_budget`'s and
-`taipan_wardryx_policy`'s HTTP calls are tested against an `httptest` mock server that
+render/validate logic is unit-tested directly, and `taipan_budget`'s, `taipan_unit_budget`'s
+and `taipan_wardryx_policy`'s HTTP calls are tested against an `httptest` mock server that
 asserts the exact request/response shapes read out of `crates/cloud/src/http.rs` and
 wardryx's `internal/api`, respectively (method, path, headers, body shape, and the
 not-found/error-response cases each resource's Read/Delete branch on).
 
 ### Acceptance tests (`TF_ACC`)
 
-`TestAccBudgetResource` and `TestAccWardryxPolicyResource`
-(`internal/provider/budget_resource_test.go`,
+`TestAccBudgetResource`, `TestAccUnitBudgetResource` and `TestAccWardryxPolicyResource`
+(`internal/provider/budget_resource_test.go`, `internal/provider/unit_budget_resource_test.go`,
 `internal/provider/wardryx_policy_resource_test.go`) drive the real provider over the
 actual Terraform protocol v6 wire, via `terraform-plugin-testing`, exercising the
 `tfsdk.Plan`/`State` handling inside each resource's Create/Read/Update/Delete that the
-`httptest`-mock unit tests above deliberately don't reach. Both are gated on `TF_ACC`
+`httptest`-mock unit tests above deliberately don't reach. All three are gated on `TF_ACC`
 (Terraform's own opt-in convention: unset, `go test ./...` reports them as `SKIP`, never
 `FAIL`) plus a live backend, so they never affect the `build` job or a plain `go test`.
 
+`TestAccAgentPassportFilesystemModels` and `TestAccAgentPassportResource_Import`
+(`internal/provider/passport_resource_test.go`) are also `TF_ACC`-gated but need no live
+backend, since `taipan_agent_passport` calls no API: just a `terraform`/`tofu` binary on
+`PATH`. The second is the regression test for `taipan_agent_passport`'s `ImportState`
+(see the resource's own section above): it applies a resource exercising every attribute,
+imports it back by file path into a second address, and `ImportStateVerify` asserts every
+attribute round-trips.
+
 Each resource's `CheckDestroy` asserts what that resource's own `Delete` actually does,
-not a generic "is it gone" check: `taipan_budget`'s asserts the budget survives (Delete
-is state-only, see its own doc comment), `taipan_wardryx_policy`'s asserts a real 404
-(Delete calls a real `DELETE`).
+not a generic "is it gone" check: `taipan_budget`'s and `taipan_unit_budget`'s each assert
+their budget survives (Delete is state-only, see each resource's own doc comment),
+`taipan_wardryx_policy`'s asserts a real 404 (Delete calls a real `DELETE`).
 
 Run them against real, disposable local instances with:
 
@@ -403,15 +471,19 @@ not have caught: neither `taipan_budget` nor (implicitly) `taipan_wardryx_policy
 Wardryx's `updated_at` has only second-level granularity (`time.RFC3339`, no fractional
 seconds), so a Create immediately followed by an Update in the same test process can
 land in the same wall-clock second, requiring a short `PreConfig` sleep before asserting
-`updated_at` actually changed.
+`updated_at` actually changed. `taipan_unit_budget` shares `taipan_budget`'s exact shape
+(no `id`, only `unit_id`), so `TestAccUnitBudgetResource` applies the same
+`ImportStateVerifyIdentifierAttribute: "unit_id"` from the start rather than rediscovering it.
 
 ---
 
 ## Status
 
-- [x] `taipan_budget`: central TokenFuse Cloud spend budget, create/update/read/best-effort delete
-- [x] `taipan_agent_passport`: rendered, validated Agent Passport document, optional on-disk output
-- [x] `taipan_wardryx_policy`: Wardryx policy-as-code document, create/update/read/real delete, layered on Wardryx's own file-loaded policies
+- [x] `taipan_budget`: central TokenFuse Cloud spend budget, create/update/read/best-effort delete/import
+- [x] `taipan_unit_budget`: central TokenFuse Cloud monthly budget for one business unit, create/update/read/best-effort delete/import
+- [x] `taipan_agent_passport`: rendered, validated Agent Passport document, optional on-disk output, import from an existing file
+- [x] `taipan_wardryx_policy`: Wardryx policy-as-code document, create/update/read/real delete/import, layered on Wardryx's own file-loaded policies
+- [x] Every resource supports `terraform import`
 - [x] CI: gofmt, vet, staticcheck, race tests, build, govulncheck, gosec
 - [x] `TF_ACC`-gated acceptance tests against a live TokenFuse Cloud / Wardryx (`make testacc`, `scripts/testacc-local.sh`, CI `acceptance` job)
 - [x] `attestation_detail` attribute for detail-bearing attestation methods (`spiffe-svid`, `oidc`)
