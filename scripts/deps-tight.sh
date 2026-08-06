@@ -11,6 +11,24 @@
 # those two and are not ours to choose; pinning them here would just mean the
 # check goes stale on the next `go mod tidy`.
 #
+# What this does NOT check: that agent-stack-go's pin is CURRENT. On
+# 2026-08-06 the pin sat at v0.1.0 while that module was tagged through
+# v0.5.1 (five releases behind), which is exactly what invariant 5 forbids
+# in spirit -- passport_resource.go had hand-rolled local copies of two
+# types agent-stack-go/passport had carried since v0.3.0. Decided not to
+# gate currency here: unlike presence (this repo's own go.mod, checked
+# entirely offline), currency needs to know what the LATEST tag over there
+# is, which means either a network call in a gate this repo otherwise runs
+# fully offline and deterministically, or checking out the sibling repo the
+# way agent-stack-go's own schemas-in-sync.sh does. Either turns this gate
+# red on a schedule this repo does not control -- a new agent-stack-go tag,
+# on its own, with no commit here -- which is a different failure shape from
+# every other gate in this file, all of which fail only on a change made IN
+# this repo. Left as an explicit gap rather than a silent one: re-check the
+# pin against https://github.com/TAIPANBOX/agent-stack-go/tags by hand
+# periodically, and see CLAUDE.md's "Decisions that have no gate yet" for
+# the same note.
+#
 # This file is the ONE copy of this check. The local hook and CI both call it.
 # Two copies of one check always diverge, so do not inline it anywhere.
 

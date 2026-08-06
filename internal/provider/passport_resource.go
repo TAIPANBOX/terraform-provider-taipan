@@ -266,33 +266,36 @@ func (r *passportResource) Delete(ctx context.Context, req resource.DeleteReques
 
 // passportDocument is the wire shape renderPassport marshals. It embeds the
 // shared agent-stack-go/passport.Passport verbatim -- preserving every field
-// and its exact JSON key order -- and adds the two array fields the Agent
-// Passport JSON schema defines (agent-passport/SPEC.md §4.4-4.5) but the Go
-// mirror type does not yet carry: filesystem and models. Both are omitempty,
-// so a passport declaring neither renders byte-for-byte identically to one
-// produced before these blocks existed, and passport.Parse (which ignores
-// fields it does not know) still validates the embedded core unchanged.
+// and its exact JSON key order -- and declares its own filesystem/models
+// fields on top, using agent-stack-go/passport's own FsScope and Model
+// element types (added upstream in v0.3.0; this resource hand-rolled local
+// copies of both, passportFilesystemDoc and passportModelDoc, until this
+// pin caught up -- see CLAUDE.md invariant 5).
+//
+// passport.Passport has carried its own Filesystem/Models fields natively
+// since v0.3.0 (declared between Attestation and Labels), which raises an
+// obvious question: why does this wrapper still declare its own copies
+// instead of just setting those fields directly on the embedded Passport?
+// Byte-for-byte output stability. Go's encoding/json resolves a name
+// collision between an embedded type's field and the outer struct's own
+// field in favor of the SHALLOWER one, unconditionally, so this wrapper's
+// own trailing Filesystem/Models fields shadow the embedded ones and keep
+// "filesystem"/"models" positioned at the end of the rendered document,
+// exactly where they have always been. Populating the embedded Passport's
+// own Filesystem/Models instead would move both keys to between
+// "attestation" and "labels" (Passport's own declared position), which is a
+// silent behavior change for any existing taipan_agent_passport that sets
+// both a block and labels: the computed json attribute would differ on the
+// next Read even though nothing about the config changed, which is exactly
+// the "perpetual diff" CLAUDE.md invariant 1 exists to prevent.
+// TestRenderPassport_KeyOrderStableWithLabelsAndBlocks pins this.
+//
+// Both fields stay omitempty, so a passport declaring neither renders
+// byte-for-byte identically to one produced before these blocks existed.
 type passportDocument struct {
 	passport.Passport
-	Filesystem []passportFilesystemDoc `json:"filesystem,omitempty"`
-	Models     []passportModelDoc      `json:"models,omitempty"`
-}
-
-// passportFilesystemDoc is one entry of the document's root-level filesystem
-// array; both fields are required by the schema, so neither is omitempty.
-type passportFilesystemDoc struct {
-	Path string `json:"path"`
-	Mode string `json:"mode"`
-}
-
-// passportModelDoc is one entry of the document's root-level models array.
-// Only provider is required; model and endpoint are omitempty so an entry
-// naming neither serializes as a bare {"provider":"..."}, matching the
-// wizard-generated document's own shape.
-type passportModelDoc struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model,omitempty"`
-	Endpoint string `json:"endpoint,omitempty"`
+	Filesystem []passport.FsScope `json:"filesystem,omitempty"`
+	Models     []passport.Model   `json:"models,omitempty"`
 }
 
 // renderPassport builds a passportDocument from the resource's current
@@ -335,7 +338,7 @@ func renderPassport(ctx context.Context, data *passportResourceModel) ([]byte, e
 			return nil, fmt.Errorf("read filesystem: %s", diags[0].Summary())
 		}
 		for _, s := range scopes {
-			doc.Filesystem = append(doc.Filesystem, passportFilesystemDoc{
+			doc.Filesystem = append(doc.Filesystem, passport.FsScope{
 				Path: s.Path.ValueString(),
 				Mode: s.Mode.ValueString(),
 			})
@@ -349,7 +352,7 @@ func renderPassport(ctx context.Context, data *passportResourceModel) ([]byte, e
 			return nil, fmt.Errorf("read models: %s", diags[0].Summary())
 		}
 		for _, m := range decls {
-			doc.Models = append(doc.Models, passportModelDoc{
+			doc.Models = append(doc.Models, passport.Model{
 				Provider: m.Provider.ValueString(),
 				Model:    m.Model.ValueString(),
 				Endpoint: m.Endpoint.ValueString(),

@@ -264,8 +264,8 @@ func TestRenderPassport_NoDetailWhenUnset(t *testing.T) {
 // blocks the Genaryx onboard wizard and the catalog Terraform emit: they must
 // render as the document's root-level filesystem/models arrays (agent-passport
 // SPEC.md §4.4-4.5), in declared order, and still round-trip through
-// passport.Parse (which tolerates the fields the Go mirror type does not yet
-// carry).
+// passport.Parse, which has validated both fields directly on
+// passport.Passport since agent-stack-go v0.3.0.
 func TestRenderPassport_FilesystemAndModels(t *testing.T) {
 	data := &passportResourceModel{
 		ID:    types.StringValue("agent://acme.example/data/etl-bot"),
@@ -342,6 +342,55 @@ func TestRenderPassport_FilesystemAndModels(t *testing.T) {
 	}
 	if string(again) != string(rendered) {
 		t.Errorf("render with filesystem/models not deterministic:\n--- a ---\n%s\n--- b ---\n%s", rendered, again)
+	}
+}
+
+// TestRenderPassport_KeyOrderStableWithLabelsAndBlocks pins a byte-order
+// property that none of the tests above happen to catch, all of them decode
+// into a map or only check one section at a time. agent-stack-go v0.3.0
+// added Filesystem/Models fields directly onto passport.Passport itself,
+// between Attestation and Labels in ITS declared order; passportDocument
+// still declares its own Filesystem/Models fields explicitly, which is what
+// keeps this resource's on-the-wire key order (schema, id, owner,
+// display_name, runtime, parent, attestation, labels, created_at,
+// filesystem, models) unchanged from before that upstream addition existed,
+// via Go's own field-shadowing rule (a struct's own field always wins over
+// one promoted from an embedded type at the same JSON name, regardless of
+// declaration order). If passportDocument ever stopped declaring its own
+// copies and relied on the promoted fields instead, "filesystem"/"models"
+// would move to between "attestation" and "labels" in the byte stream, and
+// an existing taipan_agent_passport with both blocks AND labels set would see
+// its computed json attribute change under an apply that changed nothing --
+// exactly the "perpetual diff" CLAUDE.md invariant 1 exists to prevent. A
+// mismatched key order here is what that regression looks like in a byte
+// string, since nothing else pins it.
+func TestRenderPassport_KeyOrderStableWithLabelsAndBlocks(t *testing.T) {
+	data := &passportResourceModel{
+		ID:     types.StringValue("agent://acme.example/data/etl-bot"),
+		Owner:  types.StringValue("team-data@acme.example"),
+		Labels: mustLabels(t, map[string]string{"env": "prod"}),
+		Filesystem: mustFilesystem(t, []filesystemScopeModel{
+			{Path: types.StringValue("/data/reports"), Mode: types.StringValue("read")},
+		}),
+		Models: mustModels(t, []modelDeclModel{
+			{Provider: types.StringValue("anthropic"), Model: types.StringNull(), Endpoint: types.StringNull()},
+		}),
+	}
+
+	rendered, err := renderPassport(context.Background(), data)
+	if err != nil {
+		t.Fatalf("renderPassport: %v", err)
+	}
+
+	labelsIdx := strings.Index(string(rendered), `"labels"`)
+	filesystemIdx := strings.Index(string(rendered), `"filesystem"`)
+	modelsIdx := strings.Index(string(rendered), `"models"`)
+	if labelsIdx == -1 || filesystemIdx == -1 || modelsIdx == -1 {
+		t.Fatalf("expected labels, filesystem and models all present:\n%s", rendered)
+	}
+	if !(labelsIdx < filesystemIdx && filesystemIdx < modelsIdx) {
+		t.Errorf("key order changed: want labels < filesystem < models in the byte stream, got labels@%d filesystem@%d models@%d:\n%s",
+			labelsIdx, filesystemIdx, modelsIdx, rendered)
 	}
 }
 
