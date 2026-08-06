@@ -567,3 +567,95 @@ func checkRenderedPassportBlocks(rendered string) error {
 	}
 	return nil
 }
+
+// testAccAgentPassportImportConfig exercises every schema attribute and
+// both nested block types, so the import test below proves ImportState
+// reconstructs the WHOLE resource from the file on disk, not a happy-path
+// subset. output_path is a real file this test owns (t.TempDir()), since
+// ImportState reads and parses that exact file.
+func testAccAgentPassportImportConfig(outputPath string) string {
+	return fmt.Sprintf(`
+resource "taipan_agent_passport" "acc" {
+  id                 = "agent://acme.example/support/tier1-bot"
+  owner              = "team-support@acme.example"
+  display_name       = "Tier-1 support bot"
+  runtime            = "langgraph"
+  parent             = "agent://acme.example/support/orchestrator"
+  attestation_method = "spiffe-svid"
+  attestation_detail = "spiffe://acme.example/support/tier1-bot"
+
+  labels = {
+    env         = "prod"
+    cost_center = "cs-eu"
+  }
+
+  filesystem {
+    path = "/data/reports"
+    mode = "read"
+  }
+  filesystem {
+    path = "/data/out"
+    mode = "write"
+  }
+
+  models {
+    provider = "anthropic"
+    model    = "claude-sonnet-4-5"
+    endpoint = "api.anthropic.com"
+  }
+  models {
+    provider = "openai"
+  }
+
+  output_path = %q
+}
+`, outputPath)
+}
+
+// TestAccAgentPassportResource_Import is the regression test for item K of
+// the 2026-08-05 audit: taipan_agent_passport was the only resource with no
+// ImportState, so an operator with an existing passport JSON on disk
+// (exactly what catalog/passport-templates and the Genaryx onboard wizard
+// produce) could not bring it under Terraform management without a
+// recreate.
+//
+// Unlike taipan_budget/taipan_wardryx_policy, a plain
+// ImportStatePassthroughID would not have been enough here: this
+// resource's Read never reaches an API, it only re-renders from whatever is
+// ALREADY in state (renderPassport), so passing through just the id would
+// leave every other attribute empty and either fail on the required owner
+// field or silently produce the wrong document. ImportState instead reads
+// and parses the file at the given path directly and populates every
+// attribute from it -- which is also why the import id here is a file path
+// (`terraform import taipan_agent_passport.name ./passports/tier1-bot.json`),
+// not the agent:// id: the id alone does not say where the file is, and
+// finding the file is the entire point of this resource existing.
+//
+// Runs solely under TF_ACC, no PreCheck: like
+// TestAccAgentPassportFilesystemModels, taipan_agent_passport calls no API,
+// so this needs a terraform/tofu binary on PATH but no live backend.
+func TestAccAgentPassportResource_Import(t *testing.T) {
+	dir := t.TempDir()
+	outputPath := filepath.Join(dir, "tier1-bot.json")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccAgentPassportImportConfig(outputPath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("taipan_agent_passport.acc", "id", "agent://acme.example/support/tier1-bot"),
+				),
+			},
+			{
+				ResourceName: "taipan_agent_passport.acc",
+				// The import id is the file path ImportState reads and
+				// parses, not the resource's own id attribute; see the doc
+				// comment above.
+				ImportStateId:     outputPath,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/TAIPANBOX/agent-stack-go/passport"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -14,7 +15,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-var _ resource.Resource = &passportResource{}
+var (
+	_ resource.Resource                = &passportResource{}
+	_ resource.ResourceWithImportState = &passportResource{}
+)
 
 // passportResource implements taipan_agent_passport: it renders and
 // validates a TAIPANBOX Agent Passport document (schema
@@ -263,6 +267,146 @@ func (r *passportResource) Delete(ctx context.Context, req resource.DeleteReques
 		resp.Diagnostics.AddError("Unable to remove taipan_agent_passport output_path", err.Error())
 	}
 }
+
+// ImportState brings an existing passport JSON file on disk (exactly what
+// catalog/passport-templates or the Genaryx onboard wizard produce) under
+// management: `terraform import taipan_agent_passport.name
+// ./passports/tier1-bot.json`. The import id is that file's PATH, not the
+// passport's own agent:// id -- the id alone does not say where the file
+// lives, and finding the file is the entire point of this resource.
+//
+// This resource calls no API, so Read cannot re-derive the schema's other
+// attributes from just an id the way taipan_budget/taipan_wardryx_policy's
+// Read does from a live server: Read here only ever re-renders from
+// whatever is ALREADY in state (renderPassport). A plain
+// ImportStatePassthroughID would therefore leave every other attribute
+// empty, which renderPassport rejects outright (owner is required) rather
+// than silently producing the wrong document. So ImportState reads and
+// parses the file itself, via agent-stack-go/passport.Parse (the same
+// validation this resource's own Create/Update round-trip through), and
+// populates every attribute directly from the parsed document, including
+// output_path itself (set to the path just read, so this resource keeps
+// managing that exact file going forward).
+func (r *passportResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	path := req.ID
+	// #nosec G304 -- path is the operator-supplied `terraform import` id, not untrusted input
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to read taipan_agent_passport import file",
+			fmt.Sprintf(
+				"terraform import taipan_agent_passport takes the path to an existing passport JSON file as its id, e.g. `terraform import taipan_agent_passport.name ./passports/tier1-bot.json`. Reading %q failed: %s",
+				path, err,
+			),
+		)
+		return
+	}
+
+	p, err := passport.Parse(raw)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Invalid taipan_agent_passport import file",
+			fmt.Sprintf("%q did not parse as a valid Agent Passport document: %s", path, err),
+		)
+		return
+	}
+
+	data := passportResourceModel{
+		ID:                types.StringValue(p.ID),
+		Owner:             types.StringValue(p.Owner),
+		DisplayName:       stringOrNull(p.DisplayName),
+		Runtime:           stringOrNull(p.Runtime),
+		Parent:            stringOrNull(p.Parent),
+		AttestationMethod: types.StringNull(),
+		AttestationDetail: types.StringNull(),
+		OutputPath:        types.StringValue(path),
+	}
+	if p.Attestation != nil {
+		data.AttestationMethod = stringOrNull(p.Attestation.Method)
+		data.AttestationDetail = stringOrNull(p.Attestation.Detail)
+	}
+
+	if len(p.Labels) > 0 {
+		labels, diags := types.MapValueFrom(ctx, types.StringType, p.Labels)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		data.Labels = labels
+	} else {
+		data.Labels = types.MapNull(types.StringType)
+	}
+
+	filesystem := make([]filesystemScopeModel, 0, len(p.Filesystem))
+	for _, s := range p.Filesystem {
+		filesystem = append(filesystem, filesystemScopeModel{
+			Path: types.StringValue(s.Path),
+			Mode: types.StringValue(s.Mode),
+		})
+	}
+	filesystemList, diags := types.ListValueFrom(ctx, filesystemBlockType, filesystem)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.Filesystem = filesystemList
+
+	models := make([]modelDeclModel, 0, len(p.Models))
+	for _, m := range p.Models {
+		models = append(models, modelDeclModel{
+			Provider: types.StringValue(m.Provider),
+			Model:    stringOrNull(m.Model),
+			Endpoint: stringOrNull(m.Endpoint),
+		})
+	}
+	modelsList, diags := types.ListValueFrom(ctx, modelBlockType, models)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.Models = modelsList
+
+	rendered, err := renderPassport(ctx, &data)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid taipan_agent_passport", err.Error())
+		return
+	}
+	data.JSON = types.StringValue(string(rendered))
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// stringOrNull maps a possibly-empty Go string onto a Terraform String the
+// way an omitted Optional attribute would look: "" becomes null, not a
+// present-but-empty value. This matters for ImportState specifically,
+// since a field this resource's own schema marks Optional (not Computed)
+// shows as null in a plan when left unset in HCL, and setting it to ""
+// instead would make the very next `terraform plan` after import show a
+// diff for a field nobody changed.
+func stringOrNull(s string) types.String {
+	if s == "" {
+		return types.StringNull()
+	}
+	return types.StringValue(s)
+}
+
+// filesystemBlockType and modelBlockType are the element types of the
+// filesystem and models schema blocks, matching Schema's NestedBlockObject
+// attribute shapes exactly. ImportState needs these directly (Create/Update
+// get the equivalent for free from req.Plan.Get's own reflection); kept as
+// package-level vars so a schema change to either block only has to be
+// mirrored here once.
+var (
+	filesystemBlockType = types.ObjectType{AttrTypes: map[string]attr.Type{
+		"path": types.StringType,
+		"mode": types.StringType,
+	}}
+	modelBlockType = types.ObjectType{AttrTypes: map[string]attr.Type{
+		"provider": types.StringType,
+		"model":    types.StringType,
+		"endpoint": types.StringType,
+	}}
+)
 
 // passportDocument is the wire shape renderPassport marshals. It embeds the
 // shared agent-stack-go/passport.Passport verbatim -- preserving every field
