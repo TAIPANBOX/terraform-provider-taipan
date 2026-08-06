@@ -264,8 +264,8 @@ func TestRenderPassport_NoDetailWhenUnset(t *testing.T) {
 // blocks the Genaryx onboard wizard and the catalog Terraform emit: they must
 // render as the document's root-level filesystem/models arrays (agent-passport
 // SPEC.md §4.4-4.5), in declared order, and still round-trip through
-// passport.Parse (which tolerates the fields the Go mirror type does not yet
-// carry).
+// passport.Parse, which has validated both fields directly on
+// passport.Passport since agent-stack-go v0.3.0.
 func TestRenderPassport_FilesystemAndModels(t *testing.T) {
 	data := &passportResourceModel{
 		ID:    types.StringValue("agent://acme.example/data/etl-bot"),
@@ -342,6 +342,55 @@ func TestRenderPassport_FilesystemAndModels(t *testing.T) {
 	}
 	if string(again) != string(rendered) {
 		t.Errorf("render with filesystem/models not deterministic:\n--- a ---\n%s\n--- b ---\n%s", rendered, again)
+	}
+}
+
+// TestRenderPassport_KeyOrderStableWithLabelsAndBlocks pins a byte-order
+// property that none of the tests above happen to catch, all of them decode
+// into a map or only check one section at a time. agent-stack-go v0.3.0
+// added Filesystem/Models fields directly onto passport.Passport itself,
+// between Attestation and Labels in ITS declared order; passportDocument
+// still declares its own Filesystem/Models fields explicitly, which is what
+// keeps this resource's on-the-wire key order (schema, id, owner,
+// display_name, runtime, parent, attestation, labels, created_at,
+// filesystem, models) unchanged from before that upstream addition existed,
+// via Go's own field-shadowing rule (a struct's own field always wins over
+// one promoted from an embedded type at the same JSON name, regardless of
+// declaration order). If passportDocument ever stopped declaring its own
+// copies and relied on the promoted fields instead, "filesystem"/"models"
+// would move to between "attestation" and "labels" in the byte stream, and
+// an existing taipan_agent_passport with both blocks AND labels set would see
+// its computed json attribute change under an apply that changed nothing --
+// exactly the "perpetual diff" CLAUDE.md invariant 1 exists to prevent. A
+// mismatched key order here is what that regression looks like in a byte
+// string, since nothing else pins it.
+func TestRenderPassport_KeyOrderStableWithLabelsAndBlocks(t *testing.T) {
+	data := &passportResourceModel{
+		ID:     types.StringValue("agent://acme.example/data/etl-bot"),
+		Owner:  types.StringValue("team-data@acme.example"),
+		Labels: mustLabels(t, map[string]string{"env": "prod"}),
+		Filesystem: mustFilesystem(t, []filesystemScopeModel{
+			{Path: types.StringValue("/data/reports"), Mode: types.StringValue("read")},
+		}),
+		Models: mustModels(t, []modelDeclModel{
+			{Provider: types.StringValue("anthropic"), Model: types.StringNull(), Endpoint: types.StringNull()},
+		}),
+	}
+
+	rendered, err := renderPassport(context.Background(), data)
+	if err != nil {
+		t.Fatalf("renderPassport: %v", err)
+	}
+
+	labelsIdx := strings.Index(string(rendered), `"labels"`)
+	filesystemIdx := strings.Index(string(rendered), `"filesystem"`)
+	modelsIdx := strings.Index(string(rendered), `"models"`)
+	if labelsIdx == -1 || filesystemIdx == -1 || modelsIdx == -1 {
+		t.Fatalf("expected labels, filesystem and models all present:\n%s", rendered)
+	}
+	if !(labelsIdx < filesystemIdx && filesystemIdx < modelsIdx) {
+		t.Errorf("key order changed: want labels < filesystem < models in the byte stream, got labels@%d filesystem@%d models@%d:\n%s",
+			labelsIdx, filesystemIdx, modelsIdx, rendered)
 	}
 }
 
@@ -517,4 +566,96 @@ func checkRenderedPassportBlocks(rendered string) error {
 		return fmt.Errorf("provider-only models[1] carries an endpoint key, want it omitted: %v", doc.Models[1])
 	}
 	return nil
+}
+
+// testAccAgentPassportImportConfig exercises every schema attribute and
+// both nested block types, so the import test below proves ImportState
+// reconstructs the WHOLE resource from the file on disk, not a happy-path
+// subset. output_path is a real file this test owns (t.TempDir()), since
+// ImportState reads and parses that exact file.
+func testAccAgentPassportImportConfig(outputPath string) string {
+	return fmt.Sprintf(`
+resource "taipan_agent_passport" "acc" {
+  id                 = "agent://acme.example/support/tier1-bot"
+  owner              = "team-support@acme.example"
+  display_name       = "Tier-1 support bot"
+  runtime            = "langgraph"
+  parent             = "agent://acme.example/support/orchestrator"
+  attestation_method = "spiffe-svid"
+  attestation_detail = "spiffe://acme.example/support/tier1-bot"
+
+  labels = {
+    env         = "prod"
+    cost_center = "cs-eu"
+  }
+
+  filesystem {
+    path = "/data/reports"
+    mode = "read"
+  }
+  filesystem {
+    path = "/data/out"
+    mode = "write"
+  }
+
+  models {
+    provider = "anthropic"
+    model    = "claude-sonnet-4-5"
+    endpoint = "api.anthropic.com"
+  }
+  models {
+    provider = "openai"
+  }
+
+  output_path = %q
+}
+`, outputPath)
+}
+
+// TestAccAgentPassportResource_Import is the regression test for item K of
+// the 2026-08-05 audit: taipan_agent_passport was the only resource with no
+// ImportState, so an operator with an existing passport JSON on disk
+// (exactly what catalog/passport-templates and the Genaryx onboard wizard
+// produce) could not bring it under Terraform management without a
+// recreate.
+//
+// Unlike taipan_budget/taipan_wardryx_policy, a plain
+// ImportStatePassthroughID would not have been enough here: this
+// resource's Read never reaches an API, it only re-renders from whatever is
+// ALREADY in state (renderPassport), so passing through just the id would
+// leave every other attribute empty and either fail on the required owner
+// field or silently produce the wrong document. ImportState instead reads
+// and parses the file at the given path directly and populates every
+// attribute from it -- which is also why the import id here is a file path
+// (`terraform import taipan_agent_passport.name ./passports/tier1-bot.json`),
+// not the agent:// id: the id alone does not say where the file is, and
+// finding the file is the entire point of this resource existing.
+//
+// Runs solely under TF_ACC, no PreCheck: like
+// TestAccAgentPassportFilesystemModels, taipan_agent_passport calls no API,
+// so this needs a terraform/tofu binary on PATH but no live backend.
+func TestAccAgentPassportResource_Import(t *testing.T) {
+	dir := t.TempDir()
+	outputPath := filepath.Join(dir, "tier1-bot.json")
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccAgentPassportImportConfig(outputPath),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("taipan_agent_passport.acc", "id", "agent://acme.example/support/tier1-bot"),
+				),
+			},
+			{
+				ResourceName: "taipan_agent_passport.acc",
+				// The import id is the file path ImportState reads and
+				// parses, not the resource's own id attribute; see the doc
+				// comment above.
+				ImportStateId:     outputPath,
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
 }

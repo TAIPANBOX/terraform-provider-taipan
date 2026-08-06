@@ -91,6 +91,85 @@ func (c *CloudClient) SetBudget(ctx context.Context, runID string, limitUSD floa
 	return &result, nil
 }
 
+// SetUnitBudgetResult is the JSON body POST /v1/units/{id}/budget returns
+// on success. Mirrors UnitBudgetResponse in http.rs: the same shape as
+// SetBudgetResult with the field named unit instead of run, since this sets
+// a business unit's central monthly cap (docs/20-identity-map.md section 4)
+// rather than one run's budget -- a distinct governance control, not a
+// filter over the same one.
+type SetUnitBudgetResult struct {
+	Unit         string `json:"unit"`
+	BudgetMicros int64  `json:"budget_micros"`
+}
+
+// SetUnitBudget creates or overwrites a business unit's central monthly
+// budget via POST /v1/units/{id}/budget. limitUSD is US dollars; the server
+// derives and stores microdollars itself (parsed.budget_usd * 1e6 in
+// set_unit_budget), the same conversion set_budget does for a run, so this
+// client sends the wire-identical request body (setBudgetRequest, reused
+// verbatim) and does no unit conversion on the way in. Requires the
+// caller's key to carry the admin role, enforced server-side by
+// authorize_mutation, not by this client.
+func (c *CloudClient) SetUnitBudget(ctx context.Context, unitID string, limitUSD float64) (*SetUnitBudgetResult, error) {
+	reqBody, err := json.Marshal(setBudgetRequest{BudgetUSD: limitUSD})
+	if err != nil {
+		return nil, fmt.Errorf("encode set_unit_budget request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/v1/units/%s/budget", c.BaseURL, unitID)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("build set_unit_budget request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	respBody, status, err := c.do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, &APIError{StatusCode: status, Body: string(respBody)}
+	}
+
+	var result SetUnitBudgetResult
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("decode set_unit_budget response: %w", err)
+	}
+	return &result, nil
+}
+
+// ListUnitBudgets reads every business unit -> budget-microdollars override
+// visible to the caller's org via GET /v1/unit-budgets. A deliberately
+// separate endpoint from GET /v1/budgets, not a filtered view of it
+// (docs/20-identity-map.md section 4: the run-budget payload is a flat
+// run_id -> i64 map old gateways parse verbatim and cannot grow a nested
+// key without breaking them), so this is its own request against its own
+// path, mirroring ListBudgets' shape one-for-one (map[string]int64, not an
+// array or envelope).
+func (c *CloudClient) ListUnitBudgets(ctx context.Context) (map[string]int64, error) {
+	url := fmt.Sprintf("%s/v1/unit-budgets", c.BaseURL)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build unit-budgets request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+
+	respBody, status, err := c.do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, &APIError{StatusCode: status, Body: string(respBody)}
+	}
+
+	var budgets map[string]int64
+	if err := json.Unmarshal(respBody, &budgets); err != nil {
+		return nil, fmt.Errorf("decode unit-budgets response: %w", err)
+	}
+	return budgets, nil
+}
+
 // ListBudgets reads every run -> budget-microdollars override visible to the
 // caller's org via GET /v1/budgets. The Cloud API returns a flat JSON object
 // (HashMap<String, i64> server-side, one entry per run with a central

@@ -151,6 +151,25 @@ is the wrong one to keep. That is strictly better than asking people to remember
 Invariant 1 is gated only where somebody wrote the empty-plan step. A helper
 that every resource's acceptance test must call would make it uniform.
 
+**Invariant 5's "the only source" half had no teeth until 2026-08-06, and the
+gap was real, not hypothetical.** The pin sat at `v0.1.0` while
+`agent-stack-go` was tagged through `v0.5.1`, and `passport_resource.go` had
+hand-rolled `passportFilesystemDoc`/`passportModelDoc`, field-for-field
+copies of `passport.FsScope`/`passport.Model`, which agent-stack-go had
+carried since `v0.3.0`. Fixed by bumping the pin and deleting the local
+copies in favor of the upstream types.
+
+`scripts/deps-tight.sh` still only checks presence, not currency, and that
+stays a deliberate gap rather than a new gate: checking currency needs to
+ask what `agent-stack-go`'s latest tag IS, which this repo cannot answer
+from its own tree the way presence can. Either a network call or a sibling
+checkout (agent-stack-go's own `schemas-in-sync.sh` does the latter) would
+make this gate fail when a new tag ships over there, with no commit made
+here at all, a different failure shape from every other gate in this file.
+Left as a debt note instead: re-check
+`https://github.com/TAIPANBOX/agent-stack-go/tags` by hand periodically. See
+`scripts/deps-tight.sh`'s own comment for the same reasoning in place.
+
 ## Standing rule
 
 An approved architecture decision is **not finished** until it is two things: a

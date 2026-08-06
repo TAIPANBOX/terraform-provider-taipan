@@ -202,6 +202,194 @@ func TestListBudgets_ErrorResponse(t *testing.T) {
 	}
 }
 
+// TestSetUnitBudget_RequestShape asserts SetUnitBudget POSTs to exactly
+// /v1/units/{id}/budget with a {"budget_usd": <dollars>} body and a Bearer
+// auth header, matching BudgetBody and the set_unit_budget handler in
+// tokenfuse's crates/cloud/src/http.rs byte-for-byte: the same request
+// shape as the per-run SetBudget (docs/20-identity-map.md section 4 calls
+// UnitBudgetResponse "same shape as BudgetResponse with unit in place of
+// run"), on a different path, for a different governance control (a
+// business unit's monthly cap, not one run's budget).
+func TestSetUnitBudget_RequestShape(t *testing.T) {
+	var gotMethod, gotPath, gotAuth, gotContentType string
+	var gotBody []byte
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		gotBody = body
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"unit":"treasury","budget_micros":2000000000}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	result, err := client.SetUnitBudget(t.Context(), "treasury", 2000)
+	if err != nil {
+		t.Fatalf("SetUnitBudget: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %q, want POST", gotMethod)
+	}
+	if gotPath != "/v1/units/treasury/budget" {
+		t.Errorf("path = %q, want /v1/units/treasury/budget", gotPath)
+	}
+	if gotAuth != "Bearer testorg:admin:key" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer testorg:admin:key")
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotContentType)
+	}
+
+	var reqBody map[string]interface{}
+	if err := json.Unmarshal(gotBody, &reqBody); err != nil {
+		t.Fatalf("request body not valid json: %v (body=%s)", err, gotBody)
+	}
+	if len(reqBody) != 1 {
+		t.Errorf("request body has %d fields, want exactly 1 (budget_usd): %v", len(reqBody), reqBody)
+	}
+	if v, ok := reqBody["budget_usd"]; !ok || v != float64(2000) {
+		t.Errorf("request body budget_usd = %v (present=%v), want 2000", v, ok)
+	}
+
+	if result.Unit != "treasury" {
+		t.Errorf("Unit = %q, want treasury", result.Unit)
+	}
+	if result.BudgetMicros != 2000000000 {
+		t.Errorf("BudgetMicros = %d, want 2000000000", result.BudgetMicros)
+	}
+}
+
+// TestSetUnitBudget_ErrorResponse mirrors TestSetBudget_ErrorResponse: a
+// non-2xx response (e.g. the 403 a non-admin key gets from
+// authorize_mutation) surfaces as an *APIError carrying the exact response
+// body.
+func TestSetUnitBudget_ErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"admin role required"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	_, err := client.SetUnitBudget(t.Context(), "treasury", 2000)
+	if err == nil {
+		t.Fatal("SetUnitBudget: expected an error, got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v (%T), want *APIError", err, err)
+	}
+	if apiErr.StatusCode != http.StatusForbidden {
+		t.Errorf("StatusCode = %d, want 403", apiErr.StatusCode)
+	}
+	if apiErr.Body != `{"error":"admin role required"}` {
+		t.Errorf("Body = %q, want the raw error response body", apiErr.Body)
+	}
+}
+
+// TestListUnitBudgets_ReadShape asserts ListUnitBudgets GETs
+// /v1/unit-budgets and decodes the flat unit -> budget_micros JSON object
+// the real unit_budgets handler returns -- a deliberately separate endpoint
+// from /v1/budgets (docs/20-identity-map.md section 4: "that payload is a
+// flat run_id -> i64 map old gateways parse verbatim, so it cannot grow a
+// nested key without breaking them"), not a filter over the same one.
+func TestListUnitBudgets_ReadShape(t *testing.T) {
+	var gotMethod, gotPath, gotAuth string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"treasury":2000000000,"ops":500000000}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	budgets, err := client.ListUnitBudgets(t.Context())
+	if err != nil {
+		t.Fatalf("ListUnitBudgets: %v", err)
+	}
+
+	if gotMethod != http.MethodGet {
+		t.Errorf("method = %q, want GET", gotMethod)
+	}
+	if gotPath != "/v1/unit-budgets" {
+		t.Errorf("path = %q, want /v1/unit-budgets", gotPath)
+	}
+	if gotAuth != "Bearer testorg:admin:key" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer testorg:admin:key")
+	}
+
+	want := map[string]int64{"treasury": 2000000000, "ops": 500000000}
+	if len(budgets) != len(want) {
+		t.Fatalf("ListUnitBudgets = %v, want %v", budgets, want)
+	}
+	for k, v := range want {
+		if budgets[k] != v {
+			t.Errorf("ListUnitBudgets[%q] = %d, want %d", k, budgets[k], v)
+		}
+	}
+}
+
+// TestListUnitBudgets_UnitAbsent mirrors TestListBudgets_RunAbsent for the
+// unit resource's Read contract: a unit missing from the response must be
+// distinguishable from a unit present with a zero budget.
+func TestListUnitBudgets_UnitAbsent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"treasury":2000000000}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	budgets, err := client.ListUnitBudgets(t.Context())
+	if err != nil {
+		t.Fatalf("ListUnitBudgets: %v", err)
+	}
+	if _, ok := budgets["unit-missing"]; ok {
+		t.Error("unit-missing unexpectedly present in unit budgets map")
+	}
+}
+
+// TestListUnitBudgets_ErrorResponse mirrors TestListBudgets_ErrorResponse
+// for the read path.
+func TestListUnitBudgets_ErrorResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid api key"}`))
+	}))
+	defer server.Close()
+
+	client := newTestClient(server.URL)
+	_, err := client.ListUnitBudgets(t.Context())
+	if err == nil {
+		t.Fatal("ListUnitBudgets: expected an error, got nil")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("error = %v (%T), want *APIError", err, err)
+	}
+	if apiErr.StatusCode != http.StatusUnauthorized {
+		t.Errorf("StatusCode = %d, want 401", apiErr.StatusCode)
+	}
+}
+
 func TestMicrosToUSD(t *testing.T) {
 	cases := []struct {
 		micros int64

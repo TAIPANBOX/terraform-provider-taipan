@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/TAIPANBOX/agent-stack-go/passport"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -14,7 +15,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-var _ resource.Resource = &passportResource{}
+var (
+	_ resource.Resource                = &passportResource{}
+	_ resource.ResourceWithImportState = &passportResource{}
+)
 
 // passportResource implements taipan_agent_passport: it renders and
 // validates a TAIPANBOX Agent Passport document (schema
@@ -264,35 +268,178 @@ func (r *passportResource) Delete(ctx context.Context, req resource.DeleteReques
 	}
 }
 
+// ImportState brings an existing passport JSON file on disk (exactly what
+// catalog/passport-templates or the Genaryx onboard wizard produce) under
+// management: `terraform import taipan_agent_passport.name
+// ./passports/tier1-bot.json`. The import id is that file's PATH, not the
+// passport's own agent:// id -- the id alone does not say where the file
+// lives, and finding the file is the entire point of this resource.
+//
+// This resource calls no API, so Read cannot re-derive the schema's other
+// attributes from just an id the way taipan_budget/taipan_wardryx_policy's
+// Read does from a live server: Read here only ever re-renders from
+// whatever is ALREADY in state (renderPassport). A plain
+// ImportStatePassthroughID would therefore leave every other attribute
+// empty, which renderPassport rejects outright (owner is required) rather
+// than silently producing the wrong document. So ImportState reads and
+// parses the file itself, via agent-stack-go/passport.Parse (the same
+// validation this resource's own Create/Update round-trip through), and
+// populates every attribute directly from the parsed document, including
+// output_path itself (set to the path just read, so this resource keeps
+// managing that exact file going forward).
+func (r *passportResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	path := req.ID
+	// #nosec G304 -- path is the operator-supplied `terraform import` id, not untrusted input
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to read taipan_agent_passport import file",
+			fmt.Sprintf(
+				"terraform import taipan_agent_passport takes the path to an existing passport JSON file as its id, e.g. `terraform import taipan_agent_passport.name ./passports/tier1-bot.json`. Reading %q failed: %s",
+				path, err,
+			),
+		)
+		return
+	}
+
+	p, err := passport.Parse(raw)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Invalid taipan_agent_passport import file",
+			fmt.Sprintf("%q did not parse as a valid Agent Passport document: %s", path, err),
+		)
+		return
+	}
+
+	data := passportResourceModel{
+		ID:                types.StringValue(p.ID),
+		Owner:             types.StringValue(p.Owner),
+		DisplayName:       stringOrNull(p.DisplayName),
+		Runtime:           stringOrNull(p.Runtime),
+		Parent:            stringOrNull(p.Parent),
+		AttestationMethod: types.StringNull(),
+		AttestationDetail: types.StringNull(),
+		OutputPath:        types.StringValue(path),
+	}
+	if p.Attestation != nil {
+		data.AttestationMethod = stringOrNull(p.Attestation.Method)
+		data.AttestationDetail = stringOrNull(p.Attestation.Detail)
+	}
+
+	if len(p.Labels) > 0 {
+		labels, diags := types.MapValueFrom(ctx, types.StringType, p.Labels)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		data.Labels = labels
+	} else {
+		data.Labels = types.MapNull(types.StringType)
+	}
+
+	filesystem := make([]filesystemScopeModel, 0, len(p.Filesystem))
+	for _, s := range p.Filesystem {
+		filesystem = append(filesystem, filesystemScopeModel{
+			Path: types.StringValue(s.Path),
+			Mode: types.StringValue(s.Mode),
+		})
+	}
+	filesystemList, diags := types.ListValueFrom(ctx, filesystemBlockType, filesystem)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.Filesystem = filesystemList
+
+	models := make([]modelDeclModel, 0, len(p.Models))
+	for _, m := range p.Models {
+		models = append(models, modelDeclModel{
+			Provider: types.StringValue(m.Provider),
+			Model:    stringOrNull(m.Model),
+			Endpoint: stringOrNull(m.Endpoint),
+		})
+	}
+	modelsList, diags := types.ListValueFrom(ctx, modelBlockType, models)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	data.Models = modelsList
+
+	rendered, err := renderPassport(ctx, &data)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid taipan_agent_passport", err.Error())
+		return
+	}
+	data.JSON = types.StringValue(string(rendered))
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// stringOrNull maps a possibly-empty Go string onto a Terraform String the
+// way an omitted Optional attribute would look: "" becomes null, not a
+// present-but-empty value. This matters for ImportState specifically,
+// since a field this resource's own schema marks Optional (not Computed)
+// shows as null in a plan when left unset in HCL, and setting it to ""
+// instead would make the very next `terraform plan` after import show a
+// diff for a field nobody changed.
+func stringOrNull(s string) types.String {
+	if s == "" {
+		return types.StringNull()
+	}
+	return types.StringValue(s)
+}
+
+// filesystemBlockType and modelBlockType are the element types of the
+// filesystem and models schema blocks, matching Schema's NestedBlockObject
+// attribute shapes exactly. ImportState needs these directly (Create/Update
+// get the equivalent for free from req.Plan.Get's own reflection); kept as
+// package-level vars so a schema change to either block only has to be
+// mirrored here once.
+var (
+	filesystemBlockType = types.ObjectType{AttrTypes: map[string]attr.Type{
+		"path": types.StringType,
+		"mode": types.StringType,
+	}}
+	modelBlockType = types.ObjectType{AttrTypes: map[string]attr.Type{
+		"provider": types.StringType,
+		"model":    types.StringType,
+		"endpoint": types.StringType,
+	}}
+)
+
 // passportDocument is the wire shape renderPassport marshals. It embeds the
 // shared agent-stack-go/passport.Passport verbatim -- preserving every field
-// and its exact JSON key order -- and adds the two array fields the Agent
-// Passport JSON schema defines (agent-passport/SPEC.md §4.4-4.5) but the Go
-// mirror type does not yet carry: filesystem and models. Both are omitempty,
-// so a passport declaring neither renders byte-for-byte identically to one
-// produced before these blocks existed, and passport.Parse (which ignores
-// fields it does not know) still validates the embedded core unchanged.
+// and its exact JSON key order -- and declares its own filesystem/models
+// fields on top, using agent-stack-go/passport's own FsScope and Model
+// element types (added upstream in v0.3.0; this resource hand-rolled local
+// copies of both, passportFilesystemDoc and passportModelDoc, until this
+// pin caught up -- see CLAUDE.md invariant 5).
+//
+// passport.Passport has carried its own Filesystem/Models fields natively
+// since v0.3.0 (declared between Attestation and Labels), which raises an
+// obvious question: why does this wrapper still declare its own copies
+// instead of just setting those fields directly on the embedded Passport?
+// Byte-for-byte output stability. Go's encoding/json resolves a name
+// collision between an embedded type's field and the outer struct's own
+// field in favor of the SHALLOWER one, unconditionally, so this wrapper's
+// own trailing Filesystem/Models fields shadow the embedded ones and keep
+// "filesystem"/"models" positioned at the end of the rendered document,
+// exactly where they have always been. Populating the embedded Passport's
+// own Filesystem/Models instead would move both keys to between
+// "attestation" and "labels" (Passport's own declared position), which is a
+// silent behavior change for any existing taipan_agent_passport that sets
+// both a block and labels: the computed json attribute would differ on the
+// next Read even though nothing about the config changed, which is exactly
+// the "perpetual diff" CLAUDE.md invariant 1 exists to prevent.
+// TestRenderPassport_KeyOrderStableWithLabelsAndBlocks pins this.
+//
+// Both fields stay omitempty, so a passport declaring neither renders
+// byte-for-byte identically to one produced before these blocks existed.
 type passportDocument struct {
 	passport.Passport
-	Filesystem []passportFilesystemDoc `json:"filesystem,omitempty"`
-	Models     []passportModelDoc      `json:"models,omitempty"`
-}
-
-// passportFilesystemDoc is one entry of the document's root-level filesystem
-// array; both fields are required by the schema, so neither is omitempty.
-type passportFilesystemDoc struct {
-	Path string `json:"path"`
-	Mode string `json:"mode"`
-}
-
-// passportModelDoc is one entry of the document's root-level models array.
-// Only provider is required; model and endpoint are omitempty so an entry
-// naming neither serializes as a bare {"provider":"..."}, matching the
-// wizard-generated document's own shape.
-type passportModelDoc struct {
-	Provider string `json:"provider"`
-	Model    string `json:"model,omitempty"`
-	Endpoint string `json:"endpoint,omitempty"`
+	Filesystem []passport.FsScope `json:"filesystem,omitempty"`
+	Models     []passport.Model   `json:"models,omitempty"`
 }
 
 // renderPassport builds a passportDocument from the resource's current
@@ -335,7 +482,7 @@ func renderPassport(ctx context.Context, data *passportResourceModel) ([]byte, e
 			return nil, fmt.Errorf("read filesystem: %s", diags[0].Summary())
 		}
 		for _, s := range scopes {
-			doc.Filesystem = append(doc.Filesystem, passportFilesystemDoc{
+			doc.Filesystem = append(doc.Filesystem, passport.FsScope{
 				Path: s.Path.ValueString(),
 				Mode: s.Mode.ValueString(),
 			})
@@ -349,7 +496,7 @@ func renderPassport(ctx context.Context, data *passportResourceModel) ([]byte, e
 			return nil, fmt.Errorf("read models: %s", diags[0].Summary())
 		}
 		for _, m := range decls {
-			doc.Models = append(doc.Models, passportModelDoc{
+			doc.Models = append(doc.Models, passport.Model{
 				Provider: m.Provider.ValueString(),
 				Model:    m.Model.ValueString(),
 				Endpoint: m.Endpoint.ValueString(),
