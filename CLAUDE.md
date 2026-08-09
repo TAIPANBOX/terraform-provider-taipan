@@ -55,6 +55,7 @@ go test -race ./...
 go build ./...
 ./scripts/deps-tight.sh
 ./scripts/docs-generated.sh
+./scripts/gates-have-teeth.sh   # invariant 8; needs a clean tree
 ```
 
 CI additionally runs `govulncheck ./...` and the acceptance suite
@@ -105,6 +106,32 @@ an absent invariant.
    *(gate: `scripts/docs-generated.sh`)*
 7. **A published version is never reused.** Not re-tagged, not force-pushed,
    not deleted from the Registry. Ship a new patch instead. *(not enforced)*
+
+8. **A check must be able to tell "did not fail" from "did not run", and both
+   gates here have been made to fail on purpose to prove they can.**
+   `docs-generated.sh` already refuses in three distinct ways when it cannot
+   measure: tfplugindocs not installable, the tracked tree not copyable,
+   generation itself failing. Every one of those sentences was true, was
+   established by hand once in the session that wrote it, and nothing re-ran
+   them.
+
+   It is also the gate here with the most ways to go quiet, and that is why it
+   earns this rather than the dependency check. It installs a tool, copies a
+   tree, regenerates docs and diffs them. Any link in that chain can stop
+   producing output without the diff having anything to compare, and a diff of
+   nothing against nothing is empty, which reads exactly like agreement.
+   *(gate: `scripts/gates-have-teeth.sh`, 5 cases: three real faults, one
+   non-fault, and one where the whole subject of the docs gate is removed. That
+   last one is answered with the disagreement rather than with "measured
+   nothing", which is correct: the schema does generate pages and none is
+   committed, so it is a real mismatch. The two genuinely-measured-nothing
+   paths, tfplugindocs failing to install and the tree failing to copy, cannot
+   be provoked by mutating the repository and stay unexercised, which is
+   recorded here rather than glossed.)*
+
+   **What it does not cover.** It cannot test itself. It proves each gate
+   catches the faults named in it, not every fault of that kind. It found no
+   hole in either.
 
 ## Decisions that have no gate yet
 
