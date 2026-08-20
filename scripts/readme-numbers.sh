@@ -116,11 +116,67 @@ else:
             f"declares {scenarios}."
         )
 
+# --- the acceptance-test table ----------------------------------------------
+#
+# A count would have been cheaper and would have caught less. What goes wrong
+# here is not that the number drifts, it is that the LIST stops being a list:
+# a test is added, the table still reads as complete, and the one thing a
+# reader wanted from it is the one thing it no longer gives.
+#
+# So both directions. A name the README claims must exist, or somebody goes
+# looking for a test that was renamed away. And a TestAcc in the package must
+# appear, or the table is quietly a sample presented as a census.
+acc_src = "\n".join(
+    p.read_text() for p in pathlib.Path("internal/provider").glob("*_test.go")
+)
+in_code = set(re.findall(r"^func (TestAcc\w+)\(", acc_src, re.M))
+if not in_code:
+    note(
+        "FAIL: no TestAcc function found in internal/provider, so the table "
+        "check measured nothing. An absent subject is not agreement."
+    )
+else:
+    # Only the TABLE counts, not the whole README. The first version of this
+    # check scanned the entire file, and dropping a row from the table left it
+    # green because a paragraph further down still mentioned the same test.
+    # It was holding "named somewhere on the page", which is not the claim.
+    # Caught by taking a row out and watching nothing happen.
+    table = re.search(
+        r"^\| test \| what it establishes \|$.*?(?=\n\n)", text, re.M | re.S
+    )
+    if not table:
+        note(
+            "FAIL: the acceptance table is gone from the README, so this "
+            "measured nothing. Its header line is the anchor."
+        )
+        in_readme = in_code  # nothing further to say; the subject is missing
+    else:
+        in_readme = set(re.findall(r"`(TestAcc\w+)`", table.group(0)))
+    missing = sorted(in_code - in_readme)
+    invented = sorted(in_readme - in_code)
+    if missing:
+        note(
+            "FAIL: the README's acceptance table does not name "
+            + ", ".join(missing)
+            + ". The table reads as a complete list, so a test missing from it "
+            "is invisible to anybody who trusts it."
+        )
+    if invented:
+        note(
+            "FAIL: the README names "
+            + ", ".join(invented)
+            + ", which no longer exists. A renamed test leaves the old name "
+            "reading like a promise."
+        )
+
 if problems:
     print()
     print("A number on a README is a claim with no owner unless something re-reads")
     print("it. See CLAUDE.md invariant 9 and scripts/scenarios-have-tests.sh.")
     sys.exit(1)
 
-print(f"OK: coverage {actual:.1f}% clears the README's floor; scenario count agrees.")
+print(
+    f"OK: coverage {actual:.1f}% clears the README's floor; scenario count agrees; "
+    f"the acceptance table names all {len(in_code)} tests and invents none."
+)
 PY
