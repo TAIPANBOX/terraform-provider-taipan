@@ -100,4 +100,16 @@ export WARDRYX_URL="http://127.0.0.1:$WARDRYX_PORT"
 export WARDRYX_KEY="$TEST_KEY"
 
 cd "$REPO_ROOT"
-go test ./internal/provider/... -run '^TestAcc' -v -timeout 20m
+# Extra `go test` flags, so coverage can be collected over the acceptance run
+# without forking this script. That matters more than it looks: these tests
+# drive the provider IN-PROCESS via ProtoV6ProviderFactories, so a profile taken
+# over them reaches every Create/Read/Update/Delete, which `go test` without
+# TF_ACC cannot touch at all. Nothing had ever taken one, and the repository was
+# reported at 43.6% when both suites together cover 77.6%.
+#
+# Pass -count=1 with it. A cached test result writes NO coverage profile and
+# says only "(cached)", which reads like a successful run and leaves a stale
+# profile behind for somebody to quote.
+#
+# shellcheck disable=SC2086
+go test ./internal/provider/... -run '^TestAcc' -v -timeout 20m ${TESTACC_GO_FLAGS:-}
