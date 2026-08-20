@@ -122,9 +122,9 @@ an absent invariant.
    tree, regenerates docs and diffs them. Any link in that chain can stop
    producing output without the diff having anything to compare, and a diff of
    nothing against nothing is empty, which reads exactly like agreement.
-   *(gate: `scripts/gates-have-teeth.sh`, 14 cases: seven real faults, three
+   *(gate: `scripts/gates-have-teeth.sh`, 18 cases: eleven real faults, three
    non-faults, and four where a gate's whole subject is removed. It was 5 until
-   2026-08-20, when invariants 9 and 10 brought five and four more. One of the
+   2026-08-20, when invariants 9 and 10 brought five and eight more. One of the
    subject-removal cases is the docs one, and it is the odd one. That
    last one is answered with the disagreement rather than with "measured
    nothing", which is correct: the schema does generate pages and none is
@@ -176,9 +176,30 @@ an absent invariant.
     acceptance suite is TF_ACC-gated and does not run, so every CRUD method is
     outside that percentage by construction. The README says so where the
     number is, not only here.
+
+    **A LIST is a claim too, and a weaker one.** The README enumerates the
+    acceptance tests, and the drift there is not a number moving: it is a test
+    being added and the table going on reading like a complete list. So both
+    directions are held, and the direction that matters is the one nobody would
+    think to check, a test in the package that the table does not name.
+
+    That check was wrong on its first run, and it is worth recording HOW,
+    because the shape recurs. Scoped to the whole README rather than to the
+    table, it stayed green when a row was deleted, because a paragraph further
+    down still mentioned the same test by name. It was holding "named somewhere
+    on the page", which nobody had claimed and nobody wanted. Nothing about
+    reading it said so; taking a row out and watching nothing happen did.
     *(gate: `scripts/readme-numbers.sh`, which re-measures coverage and the
-    scenario count and refuses a disagreement, with 4 cases in
-    `gates-have-teeth.sh`.)*
+    scenario count, enumerates the acceptance table both ways, and refuses a
+    disagreement, with 8 cases in `gates-have-teeth.sh`.)*
+
+    **A number it does NOT state, on purpose: combined coverage.** The figure
+    with the acceptance suite included is the honest one and it is materially
+    higher, but re-measuring it needs live backends, so no gate here can. Under
+    this invariant that leaves one option, and it is not to state it and hope.
+    The README carries the command instead, which is worth more than the
+    number: it is reproducible on the day somebody reads it, rather than true
+    on the day it was written.
 
 ## Decisions that have no gate yet
 

@@ -211,10 +211,51 @@ run_case "readme-numbers: a coverage floor above what the tests reach" fail \
 	"$(py 'edit("README.md", "at least 43% of statements", "at least 95% of statements")')" \
 	"and the README claims at least"
 
+# The count is read out of the README rather than written in here. Hardcoding
+# it made this case BROKEN the moment two scenarios were added, which the
+# harness reported honestly and is the only reason it was noticed. A case that
+# has to be edited every time the subject grows is a case that will one day be
+# edited to stay quiet instead.
 run_case "readme-numbers: a scenario count that does not match features/" fail \
 	'./scripts/readme-numbers.sh' \
-	"$(py 'edit("README.md", "**9 scenarios**", "**14 scenarios**")')" \
+	"$(py 'import re
+s = open("README.md").read()
+m = re.search(r"\*\*([0-9]+) scenarios\*\*", s)
+assert m, "README states no scenario count for this case to break"
+open("README.md", "w").write(
+    s.replace(m.group(0), "**%d scenarios**" % (int(m.group(1)) + 5))
+)')" \
 	"scenarios and features/"
+
+# The acceptance table, both directions. The second is the one worth having:
+# a test added and never listed leaves the table reading like a census when it
+# has quietly become a sample.
+run_case "readme-numbers: a test dropped from the acceptance table" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "| `TestAccAgentPassportResource_Import` | a passport round-trips through import |\n", "")')" \
+	"does not name"
+
+run_case "readme-numbers: the table names a test that no longer exists" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "| `TestAccBudgetResource` |", "| `TestAccBudgetResourceRenamedAwayLongAgo` |")')" \
+	"no longer exists"
+
+# The two subject-removal cases for this check. The first was a real hole, not
+# a hypothetical one: scoped to the whole README rather than to the table, the
+# check stayed green when a row was deleted, because a paragraph elsewhere on
+# the page still named the same test. The header line is the anchor, so losing
+# it has to be "measured nothing" and never OK.
+run_case "readme-numbers: the acceptance table's anchor line removed" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "| test | what it establishes |", "| the anchor is gone |")')" \
+	"measured nothing"
+
+run_case "readme-numbers: no test file left to enumerate" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'import pathlib
+for f in pathlib.Path("internal/provider").glob("*_test.go"):
+    f.unlink()')" \
+	"measured nothing"
 
 echo
 echo "=== and what they must NOT catch ==="

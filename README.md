@@ -426,7 +426,7 @@ not-found/error-response cases each resource's Read/Delete branch on).
 ### What is covered, and what a coverage figure here does not mean
 
 `go test -race ./...` reaches **at least 43% of statements**, and `features/`
-declares **9 scenarios**, each bound to a test that exists. Both figures are
+declares **11 scenarios**, each bound to a test that exists. Both figures are
 held by `scripts/readme-numbers.sh`, which re-measures them and refuses a push
 that disagrees, because a number on a README is otherwise a claim with no owner.
 
@@ -450,14 +450,44 @@ what the provider is supposed to DO, in the words an operator would use.
 
 ### Acceptance tests (`TF_ACC`)
 
-`TestAccBudgetResource`, `TestAccUnitBudgetResource` and `TestAccWardryxPolicyResource`
-(`internal/provider/budget_resource_test.go`, `internal/provider/unit_budget_resource_test.go`,
-`internal/provider/wardryx_policy_resource_test.go`) drive the real provider over the
-actual Terraform protocol v6 wire, via `terraform-plugin-testing`, exercising the
-`tfsdk.Plan`/`State` handling inside each resource's Create/Read/Update/Delete that the
-`httptest`-mock unit tests above deliberately don't reach. All three are gated on `TF_ACC`
-(Terraform's own opt-in convention: unset, `go test ./...` reports them as `SKIP`, never
-`FAIL`) plus a live backend, so they never affect the `build` job or a plain `go test`.
+The acceptance tests drive the real provider over the actual Terraform protocol
+v6 wire, via `terraform-plugin-testing`, exercising the `tfsdk.Plan`/`State`
+handling inside each resource's Create/Read/Update/Delete that the
+`httptest`-mock unit tests above deliberately do not reach. Every one is gated
+on `TF_ACC` (Terraform's own opt-in convention: unset, `go test ./...` reports
+them as `SKIP`, never `FAIL`) plus a live backend, so they never affect the
+`build` job or a plain `go test`.
+
+| test | what it establishes |
+| --- | --- |
+| `TestAccBudgetResource` | a budget applies, re-plans empty, and imports |
+| `TestAccUnitBudgetResource` | the per-unit budget shape, same loop |
+| `TestAccWardryxPolicyResource` | a policy applies, re-plans empty, and imports |
+| `TestAccWardryxPolicyResource_DeletedOutOfBandIsRecreatedNotReportedClean` | a policy deleted behind Terraform's back is recreated, not reported as clean |
+| `TestAccAgentPassportFilesystemModels` | filesystem and model scopes render into the passport |
+| `TestAccAgentPassportResource_Import` | a passport round-trips through import |
+| `TestAccAgentPassportResource_MovingTheOutputPathLeavesNoStaleCopyBehind` | moving `output_path` removes the previous file rather than leaving a second, older passport on disk |
+| `TestAccAgentPassportResource_MissingParentDirectoryFailsLoudlyRatherThanCreatingIt` | `output_path` refuses a missing parent directory instead of silently creating one |
+
+That table is held by `scripts/readme-numbers.sh` in both directions: a test it
+names must exist, and a `TestAcc` in the package must appear in it. The drift
+worth catching is the second one. A test gets added, the table still reads like
+a complete list, and it is quietly no longer one.
+
+**No combined coverage figure is printed here on purpose.** The percentage above
+is what `go test` alone reaches; the figure with the acceptance suite included
+is higher, and stating it would put a number on this page that nothing
+re-reads, which is the exact thing invariant 10 exists to prevent. Measure it
+instead, which takes one command and disposable local backends:
+
+```sh
+TESTACC_GO_FLAGS="-count=1 -run . -coverprofile=/tmp/all.out -coverpkg=./..." \
+  ./scripts/testacc-local.sh && go tool cover -func=/tmp/all.out | tail -1
+```
+
+`-count=1` is not optional. Without it an unchanged tree serves a cached result,
+and a cached run writes no profile at all, so the measurement produces nothing
+rather than failing.
 
 `TestAccAgentPassportFilesystemModels` and `TestAccAgentPassportResource_Import`
 (`internal/provider/passport_resource_test.go`) are also `TF_ACC`-gated but need no live

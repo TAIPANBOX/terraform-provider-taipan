@@ -100,4 +100,16 @@ export WARDRYX_URL="http://127.0.0.1:$WARDRYX_PORT"
 export WARDRYX_KEY="$TEST_KEY"
 
 cd "$REPO_ROOT"
-go test ./internal/provider/... -run '^TestAcc' -v -timeout 20m
+# TESTACC_GO_FLAGS lets a caller add flags this script has no opinion about:
+# -count=1 to defeat the test cache, -coverprofile to measure what the
+# acceptance suite reaches, -run to narrow to one test while iterating.
+#
+# It is deliberately word-split. These are flags, not a path, and quoting it
+# would pass "-count=1 -coverprofile=x" as a single unknown flag.
+#
+# The default is empty, which is the invocation CI has always run. Note that
+# WITHOUT -count=1 an unchanged tree serves a cached result, and a cached run
+# writes no coverage profile at all: the measurement silently produces
+# nothing rather than failing.
+# shellcheck disable=SC2086
+go test ./internal/provider/... -run '^TestAcc' -v -timeout 20m ${TESTACC_GO_FLAGS:-}
