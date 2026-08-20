@@ -203,6 +203,19 @@ s = open(p).read()
 open(p, "w").write(s + "\n  Scenario: A promise nobody bound to a test\n    Given nothing holds this\n")')" \
 	"no @test: tag"
 
+# invariant 10: a number this README states about itself is re-read. Both
+# directions of the floor: a claim above what the tests reach, and tests that
+# fall through a claim that was true when written.
+run_case "readme-numbers: a coverage floor above what the tests reach" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "at least 43% of statements", "at least 95% of statements")')" \
+	"and the README claims at least"
+
+run_case "readme-numbers: a scenario count that does not match features/" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "**9 scenarios**", "**14 scenarios**")')" \
+	"scenarios and features/"
+
 echo
 echo "=== and what they must NOT catch ==="
 
@@ -219,6 +232,13 @@ run_case "scenarios-have-tests: a test with no scenario, which is allowed" pass 
 	"$(py 'p = "internal/provider/mapping_test.go"
 s = open(p).read()
 open(p, "w").write(s + "\nfunc TestAnAssertionThatIsNotAPromise(t *testing.T) { _ = t }\n")')"
+
+# A floor UNDER what the tests reach is understating, not lying. It gets a loud
+# line and must not be a red exit: refusing it would teach people to leave the
+# number off the README entirely, which is the outcome this gate exists against.
+run_case "readme-numbers: a floor well under actual, which is not a failure" pass \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "at least 43% of statements", "at least 20% of statements")')"
 
 echo
 echo "=== and the one this estate learned the hard way ==="
@@ -243,6 +263,12 @@ run_case "scenarios-have-tests: no _test.go left anywhere" fail \
 	"$(py 'import subprocess, glob
 for f in glob.glob("internal/**/*_test.go", recursive=True):
     subprocess.run(["git", "mv", f, f + ".moved"], check=True)')" \
+	"measured nothing"
+
+run_case "readme-numbers: no README left to read" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'import subprocess
+subprocess.run(["git", "mv", "README.md", "README-elsewhere.md"], check=True)')" \
 	"measured nothing"
 
 run_case "docs-generated: no committed docs left to compare" fail \
