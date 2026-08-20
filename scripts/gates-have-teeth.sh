@@ -211,9 +211,20 @@ run_case "readme-numbers: a coverage floor above what the tests reach" fail \
 	"$(py 'edit("README.md", "at least 43% of statements", "at least 95% of statements")')" \
 	"and the README claims at least"
 
+# The count is read out of the README rather than written in here. Hardcoding
+# it made this case BROKEN the moment two scenarios were added, which the
+# harness reported honestly and is the only reason it was noticed. A case that
+# has to be edited every time the subject grows is a case that will one day be
+# edited to stay quiet instead.
 run_case "readme-numbers: a scenario count that does not match features/" fail \
 	'./scripts/readme-numbers.sh' \
-	"$(py 'edit("README.md", "**9 scenarios**", "**14 scenarios**")')" \
+	"$(py 'import re
+s = open("README.md").read()
+m = re.search(r"\*\*([0-9]+) scenarios\*\*", s)
+assert m, "README states no scenario count for this case to break"
+open("README.md", "w").write(
+    s.replace(m.group(0), "**%d scenarios**" % (int(m.group(1)) + 5))
+)')" \
 	"scenarios and features/"
 
 # The acceptance table, both directions. The second is the one worth having:
