@@ -30,6 +30,8 @@ jobs:
         run: ./scripts/deps-tight.sh
       - name: the committed docs are what the schema generates
         run: ./scripts/docs-generated.sh
+      - name: every scenario is held by a test
+        run: ./scripts/scenarios-have-tests.sh
 
       # Last, because it mutates tracked files and restores them. It needs a
       # clean tree and says so plainly, so it also reports any earlier step

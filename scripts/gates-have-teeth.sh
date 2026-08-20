@@ -187,12 +187,38 @@ run_case "docs-generated: a doc page edited by hand" fail \
 	"$(py 'edit("docs/resources/budget.md", "# taipan_budget (Resource)", "# taipan_budget (Resource)\n\nA sentence somebody added by hand, which the next regeneration deletes.")')" \
 	"the committed docs are not what the schema generates"
 
+# The scenarios exist so what this provider promises can be read without
+# reading Go. The drift that breaks that is not a deleted scenario, it is a
+# RENAMED test: the rename is ordinary housekeeping, the scenario goes on
+# reading like a specification, and nothing runs it any more.
+run_case "scenarios-have-tests: a tag naming a test that was renamed" fail \
+	'./scripts/scenarios-have-tests.sh' \
+	"$(py 'edit("internal/provider/mapping_test.go", "func TestStringOrNullKeepsAnAbsentServerFieldOutOfState(", "func TestStringOrNullKeepsAnAbsentServerFieldOutOfStateRenamed(")')" \
+	"names no Go test that exists"
+
+run_case "scenarios-have-tests: a scenario with no tag at all" fail \
+	'./scripts/scenarios-have-tests.sh' \
+	"$(py 'p = "features/configuring-the-provider.feature"
+s = open(p).read()
+open(p, "w").write(s + "\n  Scenario: A promise nobody bound to a test\n    Given nothing holds this\n")')" \
+	"no @test: tag"
+
 echo
 echo "=== and what they must NOT catch ==="
 
 run_case "deps-tight: another indirect dependency added" pass \
 	'./scripts/deps-tight.sh' \
 	"$(py 'edit("go.mod", "\tgithub.com/agext/levenshtein v1.2.3 // indirect", "\tgithub.com/agext/levenshtein v1.2.3 // indirect\n\tgithub.com/kr/pretty v0.3.1 // indirect")')"
+
+# Only ONE direction is checked, on purpose. Most tests here are not promises
+# to an operator: the sensitive-attribute walkers and the client tests hold
+# invariants, not documented behaviour. A gate demanding a scenario per test
+# would get scenarios deleted to keep it quiet.
+run_case "scenarios-have-tests: a test with no scenario, which is allowed" pass \
+	'./scripts/scenarios-have-tests.sh' \
+	"$(py 'p = "internal/provider/mapping_test.go"
+s = open(p).read()
+open(p, "w").write(s + "\nfunc TestAnAssertionThatIsNotAPromise(t *testing.T) { _ = t }\n")')"
 
 echo
 echo "=== and the one this estate learned the hard way ==="
@@ -206,6 +232,19 @@ echo "    a gate whose subject is gone must SAY so, not report OK on nothing"
 # genuinely-measured-nothing paths in this gate are the ones it names itself,
 # tfplugindocs failing to install and the tree failing to copy, and neither can
 # be provoked from a mutation to the repository.
+run_case "scenarios-have-tests: no feature file left" fail \
+	'./scripts/scenarios-have-tests.sh' \
+	"$(py 'import subprocess
+subprocess.run(["git", "mv", "features", "features-elsewhere"], check=True)')" \
+	"measured nothing"
+
+run_case "scenarios-have-tests: no _test.go left anywhere" fail \
+	'./scripts/scenarios-have-tests.sh' \
+	"$(py 'import subprocess, glob
+for f in glob.glob("internal/**/*_test.go", recursive=True):
+    subprocess.run(["git", "mv", f, f + ".moved"], check=True)')" \
+	"measured nothing"
+
 run_case "docs-generated: no committed docs left to compare" fail \
 	'./scripts/docs-generated.sh' \
 	"$(py 'import subprocess, glob
