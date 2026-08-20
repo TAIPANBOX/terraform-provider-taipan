@@ -426,7 +426,7 @@ not-found/error-response cases each resource's Read/Delete branch on).
 ### What is covered, and what a coverage figure here does not mean
 
 `go test -race ./...` reaches **at least 43% of statements**, and `features/`
-declares **9 scenarios**, each bound to a test that exists. Both figures are
+declares **11 scenarios**, each bound to a test that exists. Both figures are
 held by `scripts/readme-numbers.sh`, which re-measures them and refuses a push
 that disagrees, because a number on a README is otherwise a claim with no owner.
 
