@@ -56,6 +56,7 @@ go build ./...
 ./scripts/deps-tight.sh
 ./scripts/docs-generated.sh
 ./scripts/scenarios-have-tests.sh  # invariant 9
+./scripts/readme-numbers.sh        # invariant 10
 ./scripts/gates-have-teeth.sh   # invariant 8; needs a clean tree
 ```
 
@@ -121,9 +122,9 @@ an absent invariant.
    tree, regenerates docs and diffs them. Any link in that chain can stop
    producing output without the diff having anything to compare, and a diff of
    nothing against nothing is empty, which reads exactly like agreement.
-   *(gate: `scripts/gates-have-teeth.sh`, 10 cases: five real faults, two
-   non-faults, and three where a gate's whole subject is removed. It was 5
-   until 2026-08-20, when invariant 9's gate brought five more. One of the
+   *(gate: `scripts/gates-have-teeth.sh`, 14 cases: seven real faults, three
+   non-faults, and four where a gate's whole subject is removed. It was 5 until
+   2026-08-20, when invariants 9 and 10 brought five and four more. One of the
    subject-removal cases is the docs one, and it is the odd one. That
    last one is answered with the disagreement rather than with "measured
    nothing", which is correct: the schema does generate pages and none is
@@ -155,6 +156,29 @@ an absent invariant.
    *(gate: `scripts/scenarios-have-tests.sh`, with 5 cases in
    `gates-have-teeth.sh`: a tag naming a renamed test, a scenario with no tag,
    the allowed unbound test, and both subjects taken away.)*
+
+10. **A number this README states about itself is re-read, or it is not
+    stated.** A figure on a README is a claim with no owner: right the day it
+    is written, and nothing says when it stopped being right, because the suite
+    grows in commits that never open the file. The estate has measured that
+    twice, on 2026-08-04 and again on 2026-08-20, when five of eleven figures
+    on it-rat.com were stale ten days after the previous sweep.
+
+    **Coverage is stated as a FLOOR.** An exact percentage goes red on the
+    commit that adds a test, which teaches people to edit the number instead of
+    reading it, and then to delete the check. A floor stays true as coverage
+    rises and goes red the moment it falls through, which is the direction
+    worth catching. A floor far below actual is understating rather than lying,
+    so it gets a loud line and not a red exit.
+
+    **And the figure is a floor under the mapping and plumbing layers, never
+    evidence that a resource works.** `go test` runs the unit tests only; the
+    acceptance suite is TF_ACC-gated and does not run, so every CRUD method is
+    outside that percentage by construction. The README says so where the
+    number is, not only here.
+    *(gate: `scripts/readme-numbers.sh`, which re-measures coverage and the
+    scenario count and refuses a disagreement, with 4 cases in
+    `gates-have-teeth.sh`.)*
 
 ## Decisions that have no gate yet
 

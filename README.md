@@ -423,6 +423,31 @@ asserts the exact request/response shapes read out of `crates/cloud/src/http.rs`
 wardryx's `internal/api`, respectively (method, path, headers, body shape, and the
 not-found/error-response cases each resource's Read/Delete branch on).
 
+### What is covered, and what a coverage figure here does not mean
+
+`go test -race ./...` reaches **at least 43% of statements**, and `features/`
+declares **9 scenarios**, each bound to a test that exists. Both figures are
+held by `scripts/readme-numbers.sh`, which re-measures them and refuses a push
+that disagrees, because a number on a README is otherwise a claim with no owner.
+
+The coverage figure is deliberately a floor rather than an exact percentage. An
+exact one goes red on the commit that adds a test, which teaches people to edit
+the number instead of reading it.
+
+**And it is a floor under the mapping and plumbing layers, not evidence that a
+resource works.** `go test` here runs the unit tests only; the acceptance suite
+is `TF_ACC`-gated and does not run, so every `Create`, `Read`, `Update`,
+`Delete` and `ImportState` sits outside that percentage by construction. What
+the number covers is the conversion between Terraform state and the wire, the
+provider's configuration precedence, and each resource's `Configure`. A
+perpetual diff, a missing `RequiresReplace` and an import that does not
+round-trip are all invisible to it, and only the acceptance tests below see
+them.
+
+`features/*.feature` exists for the same reason in the other direction: the
+generated docs under `docs/` say what an attribute IS, and the scenarios say
+what the provider is supposed to DO, in the words an operator would use.
+
 ### Acceptance tests (`TF_ACC`)
 
 `TestAccBudgetResource`, `TestAccUnitBudgetResource` and `TestAccWardryxPolicyResource`
