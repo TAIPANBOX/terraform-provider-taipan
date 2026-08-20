@@ -216,6 +216,36 @@ run_case "readme-numbers: a scenario count that does not match features/" fail \
 	"$(py 'edit("README.md", "**9 scenarios**", "**14 scenarios**")')" \
 	"scenarios and features/"
 
+# The acceptance table, both directions. The second is the one worth having:
+# a test added and never listed leaves the table reading like a census when it
+# has quietly become a sample.
+run_case "readme-numbers: a test dropped from the acceptance table" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "| `TestAccAgentPassportResource_Import` | a passport round-trips through import |\n", "")')" \
+	"does not name"
+
+run_case "readme-numbers: the table names a test that no longer exists" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "| `TestAccBudgetResource` |", "| `TestAccBudgetResourceRenamedAwayLongAgo` |")')" \
+	"no longer exists"
+
+# The two subject-removal cases for this check. The first was a real hole, not
+# a hypothetical one: scoped to the whole README rather than to the table, the
+# check stayed green when a row was deleted, because a paragraph elsewhere on
+# the page still named the same test. The header line is the anchor, so losing
+# it has to be "measured nothing" and never OK.
+run_case "readme-numbers: the acceptance table's anchor line removed" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'edit("README.md", "| test | what it establishes |", "| the anchor is gone |")')" \
+	"measured nothing"
+
+run_case "readme-numbers: no test file left to enumerate" fail \
+	'./scripts/readme-numbers.sh' \
+	"$(py 'import pathlib
+for f in pathlib.Path("internal/provider").glob("*_test.go"):
+    f.unlink()')" \
+	"measured nothing"
+
 echo
 echo "=== and what they must NOT catch ==="
 
