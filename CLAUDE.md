@@ -55,6 +55,7 @@ go test -race ./...
 go build ./...
 ./scripts/deps-tight.sh
 ./scripts/docs-generated.sh
+./scripts/scenarios-have-tests.sh  # invariant 9
 ./scripts/gates-have-teeth.sh   # invariant 8; needs a clean tree
 ```
 
@@ -120,8 +121,10 @@ an absent invariant.
    tree, regenerates docs and diffs them. Any link in that chain can stop
    producing output without the diff having anything to compare, and a diff of
    nothing against nothing is empty, which reads exactly like agreement.
-   *(gate: `scripts/gates-have-teeth.sh`, 5 cases: three real faults, one
-   non-fault, and one where the whole subject of the docs gate is removed. That
+   *(gate: `scripts/gates-have-teeth.sh`, 10 cases: five real faults, two
+   non-faults, and three where a gate's whole subject is removed. It was 5
+   until 2026-08-20, when invariant 9's gate brought five more. One of the
+   subject-removal cases is the docs one, and it is the odd one. That
    last one is answered with the disagreement rather than with "measured
    nothing", which is correct: the schema does generate pages and none is
    committed, so it is a real mismatch. The two genuinely-measured-nothing
@@ -132,6 +135,26 @@ an absent invariant.
    **What it does not cover.** It cannot test itself. It proves each gate
    catches the faults named in it, not every fault of that kind. It found no
    hole in either.
+
+9. **Every scenario in `features/` is held by a test that exists.** The
+   scenarios are there so what this provider promises can be read without
+   reading Go, which matters more here than anywhere else in the estate: the
+   docs under `docs/` are generated from the schema and say what an attribute
+   IS, and nothing said what the provider is supposed to DO in the operator's
+   own terms. The drift that breaks it is a RENAMED test, not a deleted
+   scenario: the rename is housekeeping, the scenario goes on reading like a
+   specification, and nothing runs it. Only that direction is checked; a test
+   with no scenario is ordinary here, since most tests hold invariants rather
+   than documented behaviour.
+
+   **What a scenario here may and may not claim.** Bound to a unit test, it may
+   claim things about schema shape and mapping. It may NOT claim a resource
+   works: only the acceptance suite can say that, and this gate cannot tell the
+   two apart. That distinction stays a matter for review, and is written into
+   both feature files rather than left implied.
+   *(gate: `scripts/scenarios-have-tests.sh`, with 5 cases in
+   `gates-have-teeth.sh`: a tag naming a renamed test, a scenario with no tag,
+   the allowed unbound test, and both subjects taken away.)*
 
 ## Decisions that have no gate yet
 
