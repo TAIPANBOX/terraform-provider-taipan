@@ -1,0 +1,67 @@
+{
+  "$comment": [
+    "What this repository contributes to a running stack, and what a check may",
+    "believe about it. `checked` is proved against this repository by",
+    "internal/manifest/manifest_test.go in this repository's own CI; `declared`",
+    "is a statement nobody can verify and carries its own `why`.",
+    "",
+    "THREE NAMES AGAIN, AND HERE TWO OF THEM ARE PROTOCOL RATHER THAN TASTE. The",
+    "repository is `terraform-provider-taipan`; the BINARY must be called",
+    "`terraform-provider-taipan` because that is how Terraform finds a plugin;",
+    "and in a configuration it is `TAIPANBOX/taipan`, because the registry",
+    "namespace and the type name are what a user writes. engram has the same",
+    "shape for a different reason: there the third name exists because PyPI was",
+    "taken, here because the plugin protocol says so.",
+    "",
+    "NOTHING IN THIS ESTATE INSTALLS IT, AND THAT IS NOT THE USUAL SENTENCE.",
+    "`runs: []` is correct: no launcher deploys a Terraform provider. TERRAFORM",
+    "installs it, from registry.terraform.io, when somebody writes",
+    "`source = \"TAIPANBOX/taipan\"`. So the distribution channel is a public",
+    "registry rather than any file in this estate, which is the same position",
+    "engram's `pip install engdbram` is in and the opposite of every plane, whose",
+    "installer is a launcher we own.",
+    "",
+    "THE SURFACE IS FOUR RESOURCES AND ZERO DATA SOURCES, AND BOTH HALVES ARE",
+    "CHECKED. A resource is what a user's configuration names, so a resource added",
+    "in code and not here is a surface nobody declared; and `DataSources` returning",
+    "an empty slice is a fact worth pinning, because the day it stops being empty",
+    "the manifest should have to say so rather than staying quietly true.",
+    "",
+    "IT READS NO ENVIRONMENT VARIABLE. Terraform passes configuration through the",
+    "provider block, not the environment, so there is nothing to declare and the",
+    "claim is checked the way qryx's and taipan's are: the reader is proved",
+    "against a planted name first."
+  ],
+  "schema": "taipanbox.dev/components/v1",
+  "repo": "TAIPANBOX/terraform-provider-taipan",
+  "module": "github.com/TAIPANBOX/terraform-provider-taipan",
+  "components": [
+    {
+      "name": "terraform-provider-taipan",
+      "class": "tool",
+      "checked": {
+        "package": "github.com/TAIPANBOX/terraform-provider-taipan",
+        "provider_type_name": "taipan",
+        "resources": [
+          "taipan_agent_passport",
+          "taipan_budget",
+          "taipan_unit_budget",
+          "taipan_wardryx_policy"
+        ],
+        "data_sources": [],
+        "env": {},
+        "reads_no_environment": true
+      },
+      "declared": {
+        "terraform_installs_it_not_a_launcher": {
+          "value": "registry.terraform.io/TAIPANBOX/taipan",
+          "why": "No launcher in this estate deploys a Terraform provider. Terraform fetches it from the registry when a configuration names it, which is why estate.json's `runs` is empty and right, and why the version a user gets is a published tag rather than anything a deployment pins."
+        },
+        "the_binary_name_is_the_plugin_protocol": {
+          "value": "terraform-provider-taipan",
+          "why": "Terraform finds a plugin by that exact filename. It is not a naming choice and renaming it would break discovery, so it is recorded rather than tidied."
+        }
+      }
+    }
+  ]
+}
