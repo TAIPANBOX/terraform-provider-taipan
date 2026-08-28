@@ -5,7 +5,7 @@
 **Manage TokenFuse Cloud spend budgets and Agent Passports the same way you already manage the rest of your infrastructure: in version control, PR-reviewed, applied by the same Terraform pipeline your platform team runs everything else through.**
 
 [![CI](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml/badge.svg)](https://github.com/TAIPANBOX/terraform-provider-taipan/actions/workflows/ci.yml)
-![Go](https://img.shields.io/badge/go-1.26-00ADD8.svg)
+![Go](https://img.shields.io/badge/go-1.27-00ADD8.svg)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
 ![Status](https://img.shields.io/badge/phase-4%20resources%20shipped-success.svg)
 
