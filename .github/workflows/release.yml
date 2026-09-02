@@ -20,12 +20,25 @@ on:
   push:
     tags:
       - 'v*'
+  # build-snapshot below runs on a pull request that touches THIS file, and
+  # nothing else does: the real goreleaser job stays off (see its `if`), so a
+  # pull request proves the GoReleaser config builds and signs nothing. Added
+  # 2026-09-02 after tokenfuse's v0.4.2 failed on both Linux runners the
+  # first time its own tag-only release.yml ever reached its musl leg: a
+  # workflow gated on `push: tags: v*` alone is tested by exactly one event
+  # in its whole life, and that event is the one where a mistake is public.
+  pull_request:
+    paths: ['.github/workflows/release.yml']
 
 permissions:
   contents: write
 
 jobs:
   goreleaser:
+    # Never on a pull request: this job signs with the real GPG key and
+    # publishes a GitHub release the Terraform Registry ingests. build-snapshot
+    # below is what a pull request runs instead.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,3 +65,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+
+  # Proves the same .goreleaser.yml cross-compiles cleanly, without the GPG
+  # key and without publishing anything: `build`, unlike `release`, never
+  # reaches the signs: or release: stages, so this needs neither secret and
+  # cannot sign or upload by construction rather than by a flag somebody has
+  # to remember.
+  build-snapshot:
+    name: goreleaser build --snapshot
+    # Only on the pull request that exercises this file: the real goreleaser
+    # job above already covers a tag push, and running both there would
+    # cross-compile the whole matrix twice for nothing.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run GoReleaser (snapshot build, no publish, no signing)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: '~> v2'
+          args: build --snapshot --clean
