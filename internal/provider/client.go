@@ -197,9 +197,26 @@ func (c *CloudClient) ListBudgets(ctx context.Context) (map[string]int64, error)
 	return budgets, nil
 }
 
+// maxResponseBytes caps how much of a backend response this client will
+// read into memory. A malicious or misbehaving backend (a compromised proxy,
+// a bug that streams something other than a budget list) can otherwise hand
+// an unbounded body to a `terraform apply` running on someone's laptop or CI
+// runner. 1 MiB is comfortably above any real budgets or policy payload this
+// API returns.
+const maxResponseBytes = 1 << 20
+
 // do executes an HTTP request and returns the fully-drained response body
 // and status code. Centralized so SetBudget and ListBudgets share the same
 // transport error wrapping and body-close handling.
+//
+// The body is read through a limited reader capped at maxResponseBytes+1: a
+// response at or under the cap reads exactly its own length, and one over it
+// reads one byte past the cap, which is how the oversized case is told apart
+// from a response that merely happens to be exactly maxResponseBytes long.
+// An oversized response is refused outright rather than truncated: decoding
+// a truncated body either fails opaquely or, worse, succeeds with entries
+// silently missing, which is invariant 2 ("state never invents") broken at
+// the transport layer instead of the mapping layer.
 func (c *CloudClient) do(httpReq *http.Request) ([]byte, int, error) {
 	httpResp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -207,9 +224,12 @@ func (c *CloudClient) do(httpReq *http.Request) ([]byte, int, error) {
 	}
 	defer httpResp.Body.Close()
 
-	respBody, err := io.ReadAll(httpResp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, 0, fmt.Errorf("read taipan cloud API response: %w", err)
+	}
+	if len(respBody) > maxResponseBytes {
+		return nil, 0, fmt.Errorf("taipan cloud API response exceeded the %d byte cap, refusing rather than truncating", maxResponseBytes)
 	}
 	return respBody, httpResp.StatusCode, nil
 }

@@ -205,3 +205,61 @@ func TestA200CarryingSomethingOtherThanJSONIsAnError(t *testing.T) {
 func server5s() *http.Client {
 	return &http.Client{Timeout: 5 * time.Second}
 }
+
+func TestAnOversizedBackendResponseIsRefusedNotTruncated(t *testing.T) {
+	t.Parallel()
+
+	// A malicious or misbehaving backend (a compromised proxy, a bug that
+	// starts streaming a log file instead of a budget list) can answer with
+	// an unbounded body. Reading it whole with io.ReadAll lets it exhaust
+	// memory on whatever machine is running `terraform apply`. The fix has
+	// to refuse loudly above the cap, not truncate: a truncated body decodes
+	// as garbage or, worse, as valid JSON missing entries, which is exactly
+	// the "invents nothing" invariant broken silently.
+	const twoMiB = 2 << 20
+
+	oversized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		body := make([]byte, twoMiB)
+		for i := range body {
+			body[i] = ' '
+		}
+		_, _ = w.Write(body)
+	}))
+	// t.Cleanup, not defer: the subtests below call t.Parallel(), which
+	// returns control to this function before they actually run. A bare
+	// defer would close the server while they are still paused, and every
+	// call would fail with "connection refused" instead of exercising the
+	// oversized-body path. Cleanup runs after every subtest, parallel or
+	// not, has completed.
+	t.Cleanup(oversized.Close)
+
+	for _, tc := range []struct {
+		name string
+		call func() error
+	}{
+		{"CloudClient.ListBudgets", func() error {
+			c := &CloudClient{BaseURL: oversized.URL, APIKey: "k", HTTPClient: server5s()}
+			_, err := c.ListBudgets(context.Background())
+			return err
+		}},
+		{"WardryxClient.GetPolicy", func() error {
+			c := &WardryxClient{BaseURL: oversized.URL, APIKey: "k", HTTPClient: server5s()}
+			_, err := c.GetPolicy(context.Background(), "p")
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := tc.call()
+			if err == nil {
+				t.Fatal("a response over the cap must be refused, not decoded as if it were complete")
+			}
+			if !strings.Contains(err.Error(), "1048576") && !strings.Contains(strings.ToLower(err.Error()), "max") {
+				t.Errorf("the error should name the cap so an operator can tell a refusal from a network fault, got: %s", err.Error())
+			}
+		})
+	}
+}

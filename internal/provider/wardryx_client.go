@@ -138,7 +138,10 @@ func (c *WardryxClient) DeletePolicy(ctx context.Context, id string) error {
 // do executes an HTTP request and returns the fully-drained response body
 // and status code. Centralized so PutPolicy/GetPolicy/DeletePolicy share the
 // same transport error wrapping and body-close handling, mirroring
-// CloudClient.do.
+// CloudClient.do, including the maxResponseBytes cap defined there (this
+// client and CloudClient share the package, so the constant is not
+// redeclared): a wardryx response over the cap is refused, not truncated,
+// for the same reason CloudClient.do gives.
 func (c *WardryxClient) do(httpReq *http.Request) ([]byte, int, error) {
 	httpResp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -146,9 +149,12 @@ func (c *WardryxClient) do(httpReq *http.Request) ([]byte, int, error) {
 	}
 	defer httpResp.Body.Close()
 
-	respBody, err := io.ReadAll(httpResp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxResponseBytes+1))
 	if err != nil {
 		return nil, 0, fmt.Errorf("read wardryx API response: %w", err)
+	}
+	if len(respBody) > maxResponseBytes {
+		return nil, 0, fmt.Errorf("wardryx API response exceeded the %d byte cap, refusing rather than truncating", maxResponseBytes)
 	}
 	return respBody, httpResp.StatusCode, nil
 }

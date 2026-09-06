@@ -86,3 +86,16 @@ Feature: Turning a policy into the wire and back
     # See the note in the test about what this does NOT hold: invariant 3's
     # error-text half is unchecked in this repository, and this error passes
     # the server's body through verbatim by design.
+
+  @test:TestAnOversizedBackendResponseIsRefusedNotTruncated
+  Scenario: The backend answers with an unbounded body
+    Given a TokenFuse Cloud or Wardryx response over 1 MiB
+    When the provider reads it
+    Then the call fails and names the byte cap
+    And nothing is decoded as if the body had ended there
+    # A truncated body is the dangerous outcome, not the error. Decoding it
+    # anyway either fails opaquely deep in the JSON decoder or, worse,
+    # succeeds with entries silently missing: invariant 2's "state never
+    # invents" broken at the transport layer instead of the mapping layer.
+    # This is also the layer a compromised proxy or a misbehaving backend
+    # would use to run a `terraform apply` host out of memory.
