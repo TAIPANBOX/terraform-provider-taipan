@@ -34,6 +34,7 @@
   ],
   "schema": "taipanbox.dev/components/v1",
   "repo": "TAIPANBOX/terraform-provider-taipan",
+  "distribution": "registry.terraform.io/TAIPANBOX/taipan (Terraform Registry); GPG-signed archives on each GitHub Release",
   "module": "github.com/TAIPANBOX/terraform-provider-taipan",
   "components": [
     {
