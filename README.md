@@ -409,6 +409,33 @@ Point the path at the directory containing the binary you just built. With
 `dev_overrides` active, `terraform init` is skipped for this provider, and
 `terraform plan`/`apply` use the local build directly.
 
+## Verify a download
+
+Every release is signed keyless with Sigstore and carries a build-provenance
+attestation and an SBOM, beside the GPG signature the Terraform Registry
+itself reads. With `cosign` and `gh` installed:
+
+```sh
+version=<version>   # e.g. 0.1.1, no leading v
+base="terraform-provider-taipan_${version}"
+
+cosign verify-blob --bundle "${base}_SHA256SUMS.sigstore.json" \
+  --certificate-identity "https://github.com/TAIPANBOX/terraform-provider-taipan/.github/workflows/release.yml@refs/tags/v${version}" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com "${base}_SHA256SUMS"
+sha256sum -c "${base}_SHA256SUMS"
+gh attestation verify "${base}_linux_amd64.zip" -R TAIPANBOX/terraform-provider-taipan
+```
+
+`${base}_SHA256SUMS.sig`, beside the checksums file, is the GPG signature the
+Registry itself verifies against the public key registered under the
+TAIPANBOX namespace; the commands above are an independent check anyone can
+run without that key. The SBOM (SPDX) describes the dependency graph the
+build was made from, and the provenance bundle is attached as a release asset
+too, both beside the checksums and archives.
+
+Releases v0.1.0 and v0.1.1 predate this; whether a later tag carries it is
+visible from that release's own assets.
+
 ## Example
 
 See [`examples/main.tf`](examples/main.tf) for a complete provider block plus one of
