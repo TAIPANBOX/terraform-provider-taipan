@@ -23,8 +23,9 @@ terraform-provider-taipan is pre-1.0; only `main` is supported. Fixes land on
 
 **`main` is not what the Terraform Registry serves.** A fix on `main` protects
 nobody until it is cut as a release (see "Publishing a release" in the README) and
-the Registry ingests it, and that step is currently manual, not tag-triggered (same
-README section). This gap is not hypothetical: GO-2026-6061 was fixed on `main` on
+the Registry ingests it. Since 0.2.0 that step is a version tag pushed by a
+maintainer, so the gap is as long as nobody tags, not as long as a manual
+release takes. This gap is not hypothetical: GO-2026-6061 was fixed on `main` on
 2026-07-28 and did not reach the Registry as `0.1.1` until 2026-08-05, eight days
 during which `terraform init` kept resolving the vulnerable `0.1.0`. Before trusting
 "it's fixed on main" as an answer, check what the Registry is actually serving:
