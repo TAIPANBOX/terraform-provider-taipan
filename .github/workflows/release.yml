@@ -31,7 +31,7 @@ on:
     paths: ['.github/workflows/release.yml']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   goreleaser:
