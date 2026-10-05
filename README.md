@@ -85,7 +85,7 @@ flowchart TB
   SPEC[["agent-passport: the spec"]] -.->|governs| BUS
 ```
 
-- **Consumes**: Terraform configuration (`taipan_budget`, `taipan_agent_passport`, `taipan_wardryx_policy` resources).
+- **Consumes**: Terraform configuration (`taipan_budget`, `taipan_unit_budget`, `taipan_agent_passport`, `taipan_wardryx_policy` resources).
 - **Produces**: **TokenFuse Cloud** spend budgets, rendered/validated Agent Passport documents, and **Wardryx** policy-as-code documents.
 - **Talks to**: **TokenFuse Cloud** (the `taipan_budget` API), **agent-passport** (validates against `agent-stack-go/passport`'s `Parse`, the same check **Idryx** runs on ingest), **Wardryx** (the `taipan_wardryx_policy` admin `/v1/policies` API); imports **agent-stack-go**.
 
@@ -330,8 +330,8 @@ provider "taipan" {
 
 | Attribute | Env fallback | Notes |
 | --- | --- | --- |
-| `cloud_url` | `TOKENFUSE_CLOUD_URL` | Base URL of the TokenFuse Cloud control plane. Needed by `taipan_budget`. |
-| `cloud_key` | `TOKENFUSE_CLOUD_KEY` | Sensitive. Sent as `Authorization: Bearer <cloud_key>`. `taipan_budget` mutations need an admin-role key; the bearer format is `key:org[:role]`. |
+| `cloud_url` | `TOKENFUSE_CLOUD_URL` | Base URL of the TokenFuse Cloud control plane. Needed by `taipan_budget` and `taipan_unit_budget`. |
+| `cloud_key` | `TOKENFUSE_CLOUD_KEY` | Sensitive. Sent as `Authorization: Bearer <cloud_key>`. `taipan_budget` and `taipan_unit_budget` mutations need an admin-role key; the bearer format is `key:org[:role]`. |
 | `wardryx_url` | `WARDRYX_URL` | Base URL of the operator's Wardryx deployment. Needed by `taipan_wardryx_policy`. |
 | `wardryx_key` | `WARDRYX_KEY` | Sensitive. Sent as `Authorization: Bearer <wardryx_key>` -- just the key segment of one `WARDRYX_KEYS` entry (`key:org:role`), not the full triple. `taipan_wardryx_policy` requires the key's role to be admin. |
 
