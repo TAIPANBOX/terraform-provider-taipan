@@ -246,7 +246,9 @@ Fields: `id` (the `agent://` URI, required, forces replacement, validated with
 `map(string)`), `output_path` (optional). `attestation_detail` is an unconstrained
 string (agent-passport/SPEC.md §4.3: e.g. a SPIFFE ID for `spiffe-svid`, an issuer
 URL for `oidc`); it is only rendered when `attestation_method` is also set, and
-omitted from the document entirely otherwise.
+omitted from the document entirely otherwise. `attestation_method` takes one of
+`none`, `oidc`, `spiffe-svid`, `enclave-key`, `mtls-cert` or `dpop-key`; the
+value is written as given, and the schema does not check it against that list.
 
 Two optional repeatable blocks carry the newer Agent Passport arrays, rendered
 as the document's root-level `filesystem` and `models` (agent-passport/SPEC.md
@@ -366,7 +368,7 @@ drift.
 
 `terraform-provider-taipan` is published on the Terraform Registry as
 [`TAIPANBOX/taipan`](https://registry.terraform.io/providers/TAIPANBOX/taipan),
-GPG-signed, since 23 July 2026; 0.2.0 (13 September 2026) is the first version
+GPG-signed (the release workflow that signs it was added on 23 July 2026, in commit `6280357`); 0.2.0 (13 September 2026) is the first version
 cut by the tag-triggered workflow, see "Publishing a release" below. Add it to
 a `required_providers` block and run `terraform init`, same as any other
 provider:
@@ -376,7 +378,7 @@ terraform {
   required_providers {
     taipan = {
       source  = "TAIPANBOX/taipan"
-      version = "~> 0.1"
+      version = "~> 0.2"
     }
   }
 }
@@ -416,7 +418,7 @@ attestation and an SBOM, beside the GPG signature the Terraform Registry
 itself reads. With `cosign` and `gh` installed:
 
 ```sh
-version=<version>   # e.g. 0.1.1, no leading v
+version=<version>   # e.g. 0.2.0, no leading v
 base="terraform-provider-taipan_${version}"
 
 cosign verify-blob --bundle "${base}_SHA256SUMS.sigstore.json" \
@@ -562,10 +564,11 @@ public, so this needs no cross-repo secret or PAT).
 
 Writing these against a real backend, rather than assuming the SDKv2-era acceptance-test
 conventions apply unchanged, surfaced two real gaps the `httptest`-mock unit tests could
-not have caught: neither `taipan_budget` nor (implicitly) `taipan_wardryx_policy` has an
-`id` attribute the test framework's `ImportStateVerify` defaults to, so both need
-`ImportStateId` set explicitly (`taipan_budget` additionally needs
-`ImportStateVerifyIdentifierAttribute: "run_id"`, since it has no `id` at all); and
+not have caught: `taipan_budget` and `taipan_unit_budget` have no `id` attribute, which the test
+framework's `ImportStateVerify` assumes by default, so both need `ImportStateId`
+and `ImportStateVerifyIdentifierAttribute` set explicitly (`"run_id"` for
+`taipan_budget`, `"unit_id"` for `taipan_unit_budget`); `taipan_wardryx_policy`
+has an `id`, and its test sets `ImportStateId`; and
 Wardryx's `updated_at` has only second-level granularity (`time.RFC3339`, no fractional
 seconds), so a Create immediately followed by an Update in the same test process can
 land in the same wall-clock second, requiring a short `PreConfig` sleep before asserting
