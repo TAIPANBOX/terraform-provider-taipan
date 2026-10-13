@@ -104,7 +104,7 @@ func (r *passportResource) Schema(_ context.Context, _ resource.SchemaRequest, r
 			},
 			"attestation_method": schema.StringAttribute{
 				Optional: true,
-				Description: "How the organization binds this passport's id to a workload: one of none, oidc, spiffe-svid, enclave-key, mtls-cert. " +
+				Description: "How the organization binds this passport's id to a workload: one of none, oidc, spiffe-svid, enclave-key, mtls-cert, dpop-key (agent-passport/SPEC.md §4.3; the value is written as given, not checked against this list). " +
 					"Left unset, the rendered document omits the attestation block entirely.",
 			},
 			"attestation_detail": schema.StringAttribute{

@@ -23,7 +23,7 @@ Renders and validates a TAIPANBOX Agent Passport document (schema taipanbox.dev/
 ### Optional
 
 - `attestation_detail` (String) A method-specific reference for attestation_method, e.g. a SPIFFE ID for spiffe-svid or an issuer URL for oidc (agent-passport/SPEC.md §4.3; unconstrained string, no format is validated). Ignored if attestation_method is unset, since the rendered document then omits the attestation block entirely.
-- `attestation_method` (String) How the organization binds this passport's id to a workload: one of none, oidc, spiffe-svid, enclave-key, mtls-cert. Left unset, the rendered document omits the attestation block entirely.
+- `attestation_method` (String) How the organization binds this passport's id to a workload: one of none, oidc, spiffe-svid, enclave-key, mtls-cert, dpop-key (agent-passport/SPEC.md §4.3; the value is written as given, not checked against this list). Left unset, the rendered document omits the attestation block entirely.
 - `display_name` (String) Human-readable name for the agent.
 - `filesystem` (Block List) Folders this agent is declared to access, each a nested filesystem { path mode } block, rendered as the document's root-level filesystem array (agent-passport/SPEC.md §4.4). A declaration carried on the passport for audit and inventory, not a control this stack enforces at runtime. Omitted from the rendered document entirely when no blocks are set. (see [below for nested schema](#nestedblock--filesystem))
 - `labels` (Map of String) Free-form string labels, e.g. env, cost_center.
