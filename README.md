@@ -510,6 +510,7 @@ them as `SKIP`, never `FAIL`) plus a live backend, so they never affect the
 | `TestAccAgentPassportResource_Import` | a passport round-trips through import |
 | `TestAccAgentPassportResource_MovingTheOutputPathLeavesNoStaleCopyBehind` | moving `output_path` removes the previous file rather than leaving a second, older passport on disk |
 | `TestAccAgentPassportResource_MissingParentDirectoryFailsLoudlyRatherThanCreatingIt` | `output_path` refuses a missing parent directory instead of silently creating one |
+| `TestAccAgentPassportResource_DpopKeyAttestationAppliesAndImports` | `attestation_method = "dpop-key"` applies, re-plans empty, and round-trips through import from its file |
 
 That table is held by `scripts/readme-numbers.sh` in both directions: a test it
 names must exist, and a `TestAcc` in the package must appear in it. The drift

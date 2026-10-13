@@ -201,6 +201,20 @@ an absent invariant.
     number: it is reproducible on the day somebody reads it, rather than true
     on the day it was written.
 
+11. **The `attestation_method` description lists exactly the attestation
+    methods of the agent-passport schema that the pinned `agent-stack-go`
+    carries, in its order.** That list is a copy of agent-passport's closed
+    enum, and it drifted as one: `dpop-key` joined the spec on 2026-08-26 and
+    the description, and with it the Registry page, went on naming five until
+    2026-10-13. The test reads the enum from
+    `passport/testdata/schema/agent-passport.schema.json` inside the pinned
+    module, not from a copy, so a bump of `agent-stack-go` that moves the enum
+    goes red in the bump's own pull request. Neither this provider nor
+    `passport.Parse` checks the value against the list; the description says
+    so, and `TestRenderPassport_EveryCanonicalAttestationMethodRoundTrips`
+    pins that every listed method still renders and parses.
+    *(test: `TestAttestationMethodDescriptionListsExactlyTheCanonicalMethods`)*
+
 ## Decisions that have no gate yet
 
 This list is debt, and it is here to stay visible rather than to be tidy.
