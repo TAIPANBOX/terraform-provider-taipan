@@ -27,10 +27,12 @@
     "an empty slice is a fact worth pinning, because the day it stops being empty",
     "the manifest should have to say so rather than staying quietly true.",
     "",
-    "IT READS NO ENVIRONMENT VARIABLE. Terraform passes configuration through the",
-    "provider block, not the environment, so there is nothing to declare and the",
-    "claim is checked the way qryx's and taipan's are: the reader is proved",
-    "against a planted name first."
+    "IT READS FOUR ENVIRONMENT VARIABLES, AND THEY ARE FALLBACKS. Terraform passes",
+    "configuration through the provider block first; TOKENFUSE_CLOUD_URL,",
+    "TOKENFUSE_CLOUD_KEY, WARDRYX_URL and WARDRYX_KEY are read only when the block",
+    "leaves a value unset. They are declared under checked.env, and the test that",
+    "proves them reads every non-test environment read against that list in both",
+    "directions, with the reader proved against a planted read first."
   ],
   "schema": "taipanbox.dev/components/v1",
   "repo": "TAIPANBOX/terraform-provider-taipan",
@@ -50,8 +52,12 @@
           "taipan_wardryx_policy"
         ],
         "data_sources": [],
-        "env": {},
-        "reads_no_environment": true
+        "env": {
+          "TOKENFUSE_CLOUD_URL": {"required": false},
+          "TOKENFUSE_CLOUD_KEY": {"required": false},
+          "WARDRYX_URL": {"required": false},
+          "WARDRYX_KEY": {"required": false}
+        }
       },
       "declared": {
         "terraform_installs_it_not_a_launcher": {
