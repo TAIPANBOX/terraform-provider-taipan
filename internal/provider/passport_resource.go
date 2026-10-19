@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/TAIPANBOX/agent-stack-go/passport"
+	"github.com/TAIPANBOX/agent-stack-go/v2/passport"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"

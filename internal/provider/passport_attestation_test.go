@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/TAIPANBOX/agent-stack-go/passport"
+	"github.com/TAIPANBOX/agent-stack-go/v2/passport"
 	fwresource "github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -32,7 +32,7 @@ import (
 // change to the enum.
 func canonicalAttestationMethods(t *testing.T) []string {
 	t.Helper()
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/TAIPANBOX/agent-stack-go").CombinedOutput()
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/TAIPANBOX/agent-stack-go/v2").CombinedOutput()
 	if err != nil {
 		t.Fatalf("locating the pinned agent-stack-go module: %v\n%s", err, out)
 	}

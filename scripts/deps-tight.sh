@@ -37,7 +37,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 ALLOWED=(
-	"github.com/TAIPANBOX/agent-stack-go"
+	"github.com/TAIPANBOX/agent-stack-go/v2"
 	"github.com/hashicorp/terraform-plugin-framework"
 	"github.com/hashicorp/terraform-plugin-go"
 	"github.com/hashicorp/terraform-plugin-log"
