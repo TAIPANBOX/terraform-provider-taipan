@@ -57,6 +57,7 @@ go build ./...
 ./scripts/docs-generated.sh
 ./scripts/scenarios-have-tests.sh  # invariant 9
 ./scripts/readme-numbers.sh        # invariant 10
+./scripts/no-reader-leaves-a-pipe-early.sh  # invariant 12
 ./scripts/gates-have-teeth.sh   # invariant 8; needs a clean tree
 ```
 
@@ -214,6 +215,8 @@ an absent invariant.
     so, and `TestRenderPassport_EveryCanonicalAttestationMethodRoundTrips`
     pins that every listed method still renders and parses.
     *(test: `TestAttestationMethodDescriptionListsExactlyTheCanonicalMethods`)*
+12. **A check says what the text holds, not which of a writer and its reader finished first.** `@claude 2026-11-06`, carried from stack-k8s#226 and stack-single#167; it records no decision of the owner. Under `set -o pipefail` a pipe into `grep -q` reports the writer too: grep leaves at its first match, a writer with more to write takes SIGPIPE, the pipeline returns 141, and a line that is there reads as missing. In the negative form, `if ... | grep -q bad`, the 141 reads as clean and a refused line passes. The rate follows the load on the machine. Here the one place was `scripts/gates-have-teeth.sh`, which reads a gate's output to judge a failure, so no gate here carried it; this one is carried so the next check written here does not bring the construct in. Every such pipe in live shell code here moved, 1 in one file: to a here-string, `grep -q x <<<"$text"`, or to a pipe into `grep -c x >/dev/null`.
+    *(gate: `scripts/no-reader-leaves-a-pipe-early.sh`: a control that breaks a real pipe, known lines through the reader, then every tracked shell file and workflow `run:` step masked down to live code. It refuses to report OK on no shell file, no pipe, no step or a file it lost its place in. Eighteen cases in `scripts/gates-have-teeth.sh`. Not held: `| head`, the same race, which here takes a few lines from a writer of a few lines.)*
 
 ## Decisions that have no gate yet
 
