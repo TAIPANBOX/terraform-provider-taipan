@@ -42,8 +42,13 @@ does not print a warning, it changes their infrastructure.
    co-author trailer naming the model that actually did the work.
 5. Push the branch, open a PR with `gh`.
 6. Wait for all CI checks to go green, including acceptance tests.
-7. **Ask the user before merging, and again before tagging.** Do not self-merge
-   and never tag on your own: see blast radius.
+7. **Merge it yourself once every check is green on the current head, and never
+   tag on your own: see blast radius.** One PR at a time, the fresh base merged
+   in first, never with a red or pending check. `@decided 2026-10-22`
+   (paraphrased): the model that made a change opens its PR, merges it on green
+   and cleans up its branch; a tag, a release and a Registry publish still wait
+   for the owner's go. What a tag would carry is kept in `CHANGELOG.md` under
+   "Unreleased".
 
 ## Gates
 
