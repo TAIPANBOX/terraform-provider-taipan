@@ -25,12 +25,13 @@
 #
 # `go test -coverprofile` counts STATEMENTS executed by `go test`, which in this
 # repository means the unit tests only: the acceptance suite is TF_ACC-gated and
-# does not run. So the figure is "statements reached without a live backend",
-# and every CRUD method sits outside it by construction.
+# does not run. So the figure is "statements reached without a live backend".
+# The CRUD methods are inside it since 2026-11-26 (driven directly against an
+# httptest backend); what Terraform core does around them is not.
 #
 # That is the honest shape and it is worth saying twice, because CLAUDE.md says
 # it once already: a green unit run means very little in a Terraform provider.
-# This number is a floor under the mapping and plumbing layers. It is not
+# This number is a floor under the unit-level behaviour. It is not
 # evidence that any resource works.
 
 set -euo pipefail

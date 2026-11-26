@@ -177,11 +177,15 @@ an absent invariant.
     worth catching. A floor far below actual is understating rather than lying,
     so it gets a loud line and not a red exit.
 
-    **And the figure is a floor under the mapping and plumbing layers, never
-    evidence that a resource works.** `go test` runs the unit tests only; the
-    acceptance suite is TF_ACC-gated and does not run, so every CRUD method is
-    outside that percentage by construction. The README says so where the
-    number is, not only here.
+    **And the figure is a floor under unit-level behaviour, never evidence
+    that a resource works.** `go test` runs the unit tests only; the
+    acceptance suite is TF_ACC-gated and does not run. Since 2026-11-26 the
+    unit tests drive every CRUD and ImportState method directly against an
+    `httptest` backend (`*_crud_test.go`), so the percentage now includes the
+    plan-to-state mapping inside each method; it still excludes everything
+    Terraform core does around those calls (plan modifiers, planning
+    defaults, the plan/apply consistency check, a perpetual diff). The README
+    says so where the number is, not only here.
 
     **A LIST is a claim too, and a weaker one.** The README enumerates the
     acceptance tests, and the drift there is not a number moving: it is a test

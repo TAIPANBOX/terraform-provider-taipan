@@ -208,7 +208,7 @@ open(p, "w").write(s + "\n  Scenario: A promise nobody bound to a test\n    Give
 # fall through a claim that was true when written.
 run_case "readme-numbers: a coverage floor above what the tests reach" fail \
 	'./scripts/readme-numbers.sh' \
-	"$(py 'edit("README.md", "at least 43% of statements", "at least 95% of statements")')" \
+	"$(py 'edit("README.md", "at least 92% of statements", "at least 99% of statements")')" \
 	"and the README claims at least"
 
 # The count is read out of the README rather than written in here. Hardcoding
@@ -279,7 +279,7 @@ open(p, "w").write(s + "\nfunc TestAnAssertionThatIsNotAPromise(t *testing.T) { 
 # number off the README entirely, which is the outcome this gate exists against.
 run_case "readme-numbers: a floor well under actual, which is not a failure" pass \
 	'./scripts/readme-numbers.sh' \
-	"$(py 'edit("README.md", "at least 43% of statements", "at least 20% of statements")')"
+	"$(py 'edit("README.md", "at least 92% of statements", "at least 20% of statements")')"
 
 echo
 echo "=== and the one this estate learned the hard way ==="
