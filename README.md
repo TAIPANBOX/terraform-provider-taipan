@@ -454,7 +454,9 @@ make govulncheck
 make gosec
 ```
 
-CI (`.github/workflows/ci.yml`) runs `gofmt`, `go vet`, `staticcheck`, `go test -race`,
+CI (`.github/workflows/ci.yml`) runs `gofmt`, `go vet`, `staticcheck`, `go test -race`
+(with its total coverage held against a ratcheting floor in `.coverage-floor`, which
+only rises; the target is 90% and the latest main run measures 93.5%),
 `go build` in a `build` job, `govulncheck` + `gosec -quiet` in a `security` job, and the
 `TF_ACC` acceptance tests below in a third `acceptance` job, mirroring the rest of the
 TAIPANBOX Go stack (see Idryx) for the first two.
