@@ -469,7 +469,7 @@ not-found/error-response cases each resource's Read/Delete branch on).
 
 ### What is covered, and what a coverage figure here does not mean
 
-`go test -race ./...` reaches **at least 43% of statements**, and `features/`
+`go test -race ./...` reaches **at least 92% of statements**, and `features/`
 declares **12 scenarios**, each bound to a test that exists. Both figures are
 held by `scripts/readme-numbers.sh`, which re-measures them and refuses a push
 that disagrees, because a number on a README is otherwise a claim with no owner.
@@ -478,15 +478,19 @@ The coverage figure is deliberately a floor rather than an exact percentage. An
 exact one goes red on the commit that adds a test, which teaches people to edit
 the number instead of reading it.
 
-**And it is a floor under the mapping and plumbing layers, not evidence that a
+**And it is a floor under the unit-level behaviour, not evidence that a
 resource works.** `go test` here runs the unit tests only; the acceptance suite
-is `TF_ACC`-gated and does not run, so every `Create`, `Read`, `Update`,
-`Delete` and `ImportState` sits outside that percentage by construction. What
-the number covers is the conversion between Terraform state and the wire, the
-provider's configuration precedence, and each resource's `Configure`. A
-perpetual diff, a missing `RequiresReplace` and an import that does not
-round-trip are all invisible to it, and only the acceptance tests below see
-them.
+is `TF_ACC`-gated and does not run. Since 2026-11-26 the unit tests also drive
+every `Create`, `Read`, `Update`, `Delete` and `ImportState` directly, with
+`tfsdk.Plan` and `tfsdk.State` values built from each resource's own schema,
+against an `httptest` backend (`*_crud_test.go`). That reaches the step from
+plan to request to response to state inside each method: state taken from the
+server's answer rather than the plan, a resource removed from state when the
+backend no longer has it, the budgets' state-only delete, the passport file
+written, moved and removed. What it still cannot see is everything Terraform
+core does between those calls: plan modifiers such as `RequiresReplace`,
+defaults applied during planning, a perpetual diff, and the consistency check
+between plan and apply. Only the acceptance tests below see those.
 
 `features/*.feature` exists for the same reason in the other direction: the
 generated docs under `docs/` say what an attribute IS, and the scenarios say
@@ -496,8 +500,8 @@ what the provider is supposed to DO, in the words an operator would use.
 
 The acceptance tests drive the real provider over the actual Terraform protocol
 v6 wire, via `terraform-plugin-testing`, exercising the `tfsdk.Plan`/`State`
-handling inside each resource's Create/Read/Update/Delete that the
-`httptest`-mock unit tests above deliberately do not reach. Every one is gated
+handling inside each resource's Create/Read/Update/Delete together with the
+planning Terraform core does around it, which the unit tests above cannot reach. Every one is gated
 on `TF_ACC` (Terraform's own opt-in convention: unset, `go test ./...` reports
 them as `SKIP`, never `FAIL`) plus a live backend, so they never affect the
 `build` job or a plain `go test`.
